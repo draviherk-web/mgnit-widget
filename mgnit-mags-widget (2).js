@@ -1,17 +1,28 @@
 /*!
- * Mags — MGNIT Gaming free support widget (v2 — smarter matching)
+ * Mags — MGNIT Gaming free support widget (v2.2 — input-visibility + timing fix)
  * Rule-based, runs fully in the browser. No AI/API calls, no backend, no cost.
- * Install: paste <script src="mgnit-mags-widget.js"></script> right before </body>
+ * Install: paste <script src="mgnit-mags-widget.js?v=2.2"></script> right before </body>
  * Edit: update the GAMES / CATEGORIES / FAQS / NAV arrays below to add or change content.
  *
- * v2 changes:
- *  - Fuzzy/typo-tolerant matching (Levenshtein distance) layered on top of exact matching.
- *  - Token-overlap scoring: best match wins instead of first match, handles word-order
- *    and partial-phrase input ("how play hero" / "rules for the inc hero game").
- *  - Expanded keyword/synonym lists per FAQ, category, and nav entry based on how
- *    real players actually phrase things (typos, slang, shorthand).
- *  - Friendlier, less templated fallback + a few varied bot phrasings so it doesn't
- *    feel like a scripted wall every time.
+ * v2.2 changes:
+ *  - FIX: typed text in the input box could be invisible while typing (only the
+ *    sent bubble showed text) on sites whose own theme CSS targets <input> with
+ *    higher specificity than this widget's stylesheet (e.g. "#root input{color:#fff
+ *    !important}" beats a plain "#mgw-input{color:#1a1a1a !important}" rule because
+ *    it has one extra selector component). Fixed two ways: (1) widget CSS selectors
+ *    for the input are now nested under #mgw-panel for higher specificity, and
+ *    (2) the input's text/background colors are also force-set inline via
+ *    style.setProperty(..., "important") in JS, which always wins over ANY
+ *    external CSS regardless of specificity. Belt and suspenders.
+ *  - Chips (quick-reply buttons) now appear slightly AFTER the bot's message
+ *    finishes "typing" (CHIP_DELAY_MS) instead of at the exact same moment, so a
+ *    reply reads as a sequence (typing -> message -> options) instead of
+ *    everything popping in at once, which could read as "instant".
+ *  - Added a console.log version marker on load — open DevTools > Console on the
+ *    live site and confirm it says v2.2. If it doesn't, the browser/CDN is still
+ *    serving an older cached copy of this file (see install note above: always
+ *    load this script with a version query string and bump it on every update,
+ *    otherwise browsers/CDNs can keep serving the old file indefinitely).
  *
  * v2.1 fixes (see CHANGELOG comment near the bottom of this file for details):
  *  - FAQ topics (kids safety, accounts, etc.) now take priority over loose category
@@ -28,6 +39,8 @@
  */
 (function () {
   "use strict";
+
+  console.log("Mags widget loaded — v2.2");
 
   var SITE = "https://mgnitgaming.com";
 
@@ -415,9 +428,17 @@
     ".mgw-typing span:nth-child(3){animation-delay:.3s}" +
     "@keyframes mgw-bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}" +
     "#mgw-foot{flex:0 0 auto;display:flex;gap:8px;padding:10px;border-top:1px solid #E6E9EC;background:#fff}" +
-    "#mgw-input{flex:1;border:1px solid #DADEE2;border-radius:999px;padding:10px 14px;font-size:13.5px;outline:none;background:#fff !important;color:#1a1a1a !important;caret-color:#1a1a1a !important;box-sizing:border-box;-webkit-text-fill-color:#1a1a1a}" +
-    "#mgw-input::placeholder{color:#8a8f94 !important}" +
-    "#mgw-input:focus{border-color:#1DBF73}" +
+    /* NOTE: input rules below are now scoped under #mgw-panel (two ID selectors
+       instead of one) purely to raise CSS specificity. Some host sites style
+       inputs globally with their own !important rule that has higher specificity
+       than a single-ID selector (e.g. "#root input{color:#fff !important}" beats
+       "#mgw-input{color:#1a1a1a !important}"). This alone usually fixes it, and
+       buildUI() below ALSO force-sets these same properties inline via
+       style.setProperty(prop, value, "important") as a second, stronger layer —
+       inline !important beats every external !important no matter its specificity. */
+    "#mgw-panel #mgw-input{flex:1;border:1px solid #DADEE2;border-radius:999px;padding:10px 14px;font-size:13.5px;outline:none;background:#fff !important;color:#1a1a1a !important;caret-color:#1a1a1a !important;box-sizing:border-box;-webkit-text-fill-color:#1a1a1a !important}" +
+    "#mgw-panel #mgw-input::placeholder{color:#8a8f94 !important}" +
+    "#mgw-panel #mgw-input:focus{border-color:#1DBF73}" +
     "#mgw-panel{color:#1a1a1a}" +
     "#mgw-foot{color:#1a1a1a}" +
     "#mgw-send{background:#1DBF73;border:none;color:#fff;border-radius:50%;width:38px;height:38px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto}" +
@@ -457,6 +478,11 @@
   // Keeps addBubble's signature/return value the same so every existing call site
   // (mainMenu, FAQ answers, fallback, etc.) keeps working without changes.
   var TYPING_DELAY_MS = 1000;
+  // Chips (quick-reply buttons) wait a bit LONGER than the message bubble so they
+  // visibly land AFTER the reply text appears instead of at the exact same moment —
+  // makes the typing -> message -> options flow actually readable instead of
+  // everything popping in together, which could feel "instant"/jarring.
+  var CHIP_DELAY_MS = TYPING_DELAY_MS + 450;
   function addBotBubbleWithTyping(html) {
     var row = el("div", { class: "mgw-row bot" });
     var bubble = el("div", { class: "mgw-bubble bot mgw-typing" }, "<span></span><span></span><span></span>");
@@ -483,7 +509,7 @@
       row.appendChild(wrap);
       bodyEl.appendChild(row);
       scrollToBottom();
-    }, TYPING_DELAY_MS);
+    }, CHIP_DELAY_MS);
   }
 
   function linkHtml(label, url) {
@@ -512,7 +538,7 @@
       row.appendChild(wrap);
       bodyEl.appendChild(row);
       scrollToBottom();
-    }, TYPING_DELAY_MS);
+    }, CHIP_DELAY_MS);
   }
 
   function showRecommendations(category) {
@@ -669,6 +695,19 @@
 
     var foot = el("div", { id: "mgw-foot" });
     var input = el("input", { id: "mgw-input", type: "text", placeholder: "Type your question..." });
+    // Belt-and-suspenders fix for the "text invisible while typing" bug: some host
+    // sites load their own theme CSS that targets <input> elements with higher
+    // specificity than this widget's stylesheet (e.g. a rule like
+    // "#root input{color:#fff !important}" has an extra selector component, so it
+    // beats a plain "#mgw-input{color:#1a1a1a !important}" rule even though ours
+    // is also !important — CSS breaks specificity ties between two !important
+    // rules by specificity, not by which one loaded later). Setting the same
+    // properties here, inline, with the "important" priority flag guarantees they
+    // win over ANY external stylesheet, important or not, no matter its specificity.
+    input.style.setProperty("color", "#1a1a1a", "important");
+    input.style.setProperty("background-color", "#ffffff", "important");
+    input.style.setProperty("-webkit-text-fill-color", "#1a1a1a", "important");
+    input.style.setProperty("caret-color", "#1a1a1a", "important");
     var sendBtn = el("button", { id: "mgw-send", type: "button", "aria-label": "Send" },
       '<svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>');
     foot.appendChild(input);
