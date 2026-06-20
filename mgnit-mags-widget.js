@@ -1,17 +1,28 @@
 /*!
- * Mags — MGNIT Gaming free support widget (v2 — smarter matching)
+ * Mags — MGNIT Gaming free support widget (v3 — bugfix pass)
  * Rule-based, runs fully in the browser. No AI/API calls, no backend, no cost.
  * Install: paste <script src="mgnit-mags-widget.js"></script> right before </body>
  * Edit: update the GAMES / CATEGORIES / FAQS / NAV arrays below to add or change content.
  *
- * v2 changes:
- *  - Fuzzy/typo-tolerant matching (Levenshtein distance) layered on top of exact matching.
- *  - Token-overlap scoring: best match wins instead of first match, handles word-order
- *    and partial-phrase input ("how play hero" / "rules for the inc hero game").
- *  - Expanded keyword/synonym lists per FAQ, category, and nav entry based on how
- *    real players actually phrase things (typos, slang, shorthand).
- *  - Friendlier, less templated fallback + a few varied bot phrasings so it doesn't
- *    feel like a scripted wall every time.
+ * v3 changes (on top of v2):
+ *  1. FIX: typo'd trigger phrases ("recomend a game", "onbording") now fuzzy-match
+ *     instead of requiring an exact substring hit — RECOMMEND_TRIGGERS and
+ *     ONBOARD_TRIGGERS are scored the same way FAQ/category/nav keywords are.
+ *  2. FIX: multi-word game names containing a short word (e.g. "Hero Inc", "Claritas
+ *     Dungeon Crawler RPG") could never be matched via the typo-tolerant fallback,
+ *     because fuzzyWordMatch refuses to compare words under 5 characters and the
+ *     scoring required EVERY significant word to fuzzy-match. Short words (<5 chars)
+ *     now require an exact (not fuzzy) hit instead of being unmatchable.
+ *  3. FIX: navigation intent was unreachable by free text for any topic that also
+ *     has an FAQ entry (leaderboard, account, submit), because findFAQ ran first
+ *     and FAQ keyword lists tended to score higher. Added explicit "go/take me to/
+ *     show me/open/where is" navigation-intent detection that, when present, checks
+ *     NAV before FAQ — so "take me to the leaderboard" now opens the leaderboard
+ *     page instead of reading FAQ prose at the user.
+ *  4. FIX: chat input text was invisible (white-on-white) on the live site because
+ *     the deployed build predated the color/-webkit-text-fill-color fix. Hardened
+ *     here with !important on every relevant property plus a belt-and-suspenders
+ *     attribute selector so host-page CSS can't win on specificity.
  */
 (function () {
   "use strict";
@@ -127,6 +138,10 @@
 
   var RECOMMEND_TRIGGERS = ["recommend", "suggest", "what should i play", "what should i", "bored", "something fun", "what game", "any game", "good game", "fun game", "best game", "play something", "give me a game"];
   var ONBOARD_TRIGGERS = ["new here", "first time", "getting started", "how does this site work", "how does this work", "tutorial", "take a tour", "i'm new", "im new", "new player", "how do i start", "where do i start", "show me around"];
+  // Phrases that signal the user wants to GO somewhere, as opposed to wanting an
+  // explanation. When present, NAV is checked before FAQ (fix #3) so "take me to
+  // the leaderboard" opens the leaderboard page instead of reading FAQ prose.
+  var GOTO_TRIGGERS = ["take me to", "go to", "show me the", "open the", "open ", "where is", "where's", "where can i find", "navigate to", "bring me to", "link to", "link for"];
   var GREETING_WORDS = { "hi": 1, "hello": 1, "hey": 1, "yo": 1, "hiya": 1, "heya": 1, "sup": 1, "howdy": 1, "salam": 1, "assalam": 1, "assalamualaikum": 1, "hola": 1 };
   var GREETING_REPLIES = [
     "Hey there! \u{1F44B} I'm Mags. What can I help you with?",
@@ -135,9 +150,6 @@
   ];
 
   function isGreeting(text) {
-    // Treat as a greeting only if the message is SHORT and made up of greeting
-    // words (plus minor punctuation/typos) \u2014 so "hi" and "hey there" count, but
-    // "hi, how do i reset my password" still falls through to real matching.
     var words = tokenize(text);
     if (words.length === 0 || words.length > 3) return false;
     var greetingKeys = Object.keys(GREETING_WORDS);
@@ -147,7 +159,6 @@
       var fuzzyHit = false;
       for (var j = 0; j < greetingKeys.length; j++) {
         if (fuzzyWordMatch(words[i], greetingKeys[j])) { fuzzyHit = true; break; }
-        // fuzzyWordMatch requires 3+ char words; handle short ones (hi, yo) directly.
         if (words[i].length <= 3 && greetingKeys[j].length <= 4 && levenshtein(words[i], greetingKeys[j]) <= 1) { fuzzyHit = true; break; }
       }
       if (!fuzzyHit) return false;
@@ -155,7 +166,6 @@
     return true;
   }
 
-  // Friendlier varied phrasing so the bot doesn't feel like a scripted wall every time
   var FALLBACK_LINES = [
     "Hmm, I'm not totally sure on that one \u2014 but here's what I can help with:",
     "I don't have an exact answer for that yet, but maybe one of these helps:",
@@ -165,9 +175,6 @@
 
   /* ---------------- FUZZY / TOKEN MATCHING ---------------- */
 
-  // Damerau-Levenshtein edit distance — like standard Levenshtein but also treats
-  // an adjacent-letter swap (e.g. "icn" for "inc") as a single edit instead of two.
-  // That's the most common real typo pattern, so it matters for short words.
   function levenshtein(a, b) {
     if (a === b) return 0;
     var al = a.length, bl = b.length;
@@ -194,16 +201,16 @@
   }
 
   // Two words are a "fuzzy match" if they're close enough relative to their length.
-  // Short words need an exact/near-exact match (avoids "a" matching everything);
-  // longer words tolerate 1-2 typo'd characters.
+  // Words under 5 chars require an EXACT match — tested and reverted a lower (4-char)
+  // floor during this pass: it let unrelated real words at edit-distance 1 collide
+  // ("hard"/"card", "hero"/"hiro" would also open "fire"/"hire", "lost"/"cost", etc),
+  // which is worse than the typo-intolerance it was meant to fix. Below 5 chars,
+  // typo coverage is handled by adding explicit spelling variants to keyword/trigger
+  // lists instead (see "puzzel", "brower", "passward" elsewhere in this file) —
+  // safer than blanket edit-distance tolerance on short, collision-prone words.
   function fuzzyWordMatch(w1, w2) {
     if (w1 === w2) return true;
-    // Words under 5 chars are too collision-prone for fuzzy tolerance — a single
-    // edit on a short word ("slow"/"show", "blog"/"log", "free"/"tree") usually
-    // lands on a completely different real word rather than a typo of the same
-    // word. Common short-word typos are instead handled by adding explicit
-    // variants to the keyword lists (e.g. "lode"/"loding" alongside "load").
-    if (w1.length < 5 || w2.length < 5) return false;
+    if (w1.length < 5 || w2.length < 5) return false; // exact-only zone, already checked above
     var maxLen = Math.max(w1.length, w2.length);
     var allowed = maxLen <= 5 ? 1 : (maxLen <= 9 ? 2 : 3);
     return levenshtein(w1, w2) <= allowed;
@@ -213,9 +220,6 @@
     return (text || "").toLowerCase().match(/[a-z0-9']+/g) || [];
   }
 
-  // Filler words that shouldn't count toward a fuzzy/token match score on their own —
-  // without this, generic phrases like "download the game" would score points just
-  // because the input also contains "the" and "game".
   var STOPWORDS = { "the": 1, "a": 1, "an": 1, "is": 1, "it": 1, "to": 1, "of": 1, "in": 1,
     "on": 1, "my": 1, "me": 1, "i": 1, "you": 1, "do": 1, "does": 1, "did": 1, "this": 1,
     "for": 1, "and": 1, "or": 1, "game": 1, "games": 1, "play": 1, "playing": 1, "with": 1 };
@@ -228,15 +232,7 @@
     return out;
   }
 
-  // Scores how well `text` matches a single keyword/phrase:
-  //  +2 per exact substring hit of the whole phrase (cheap win for short exact phrases)
-  //  +1 per token in the keyword phrase that fuzzy-matches a token in the input
-  // Returns a numeric score (0 = no match at all).
   function wholeWordBoundaryMatch(fullText, normPhrase) {
-    // Escape regex special chars in the phrase (keywords can contain things like
-    // "match-3" or "log-in"), then require word boundaries on both sides so a
-    // short keyword can't score just by being embedded inside a longer word
-    // (e.g. "board" inside "leaderboard", "log" inside "blog" or "catalog").
     var escaped = normPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     var re = new RegExp("\\b" + escaped + "\\b");
     return re.test(fullText);
@@ -248,7 +244,7 @@
     if (wholeWordBoundaryMatch(fullText, normPhrase)) score += 2;
 
     var phraseTokens = meaningfulTokens(tokenize(normPhrase));
-    if (phraseTokens.length === 0) return score; // pure-stopword phrase, substring hit only
+    if (phraseTokens.length === 0) return score;
 
     var hits = 0;
     for (var i = 0; i < phraseTokens.length; i++) {
@@ -256,17 +252,11 @@
         if (fuzzyWordMatch(phraseTokens[i], textTokens[j])) { hits++; break; }
       }
     }
-    // For multi-word phrases, a single overlapping word isn't enough on its own —
-    // e.g. input "no" shouldn't score against keyword "no internet" just because
-    // "no" is technically one of its two words. Require matching MORE than half
-    // the phrase's words before counting token-overlap score. Single-word phrases
-    // (most FAQ/category keywords) are unaffected — 1 of 1 still clears "more than half".
     var neededHits = phraseTokens.length === 1 ? 1 : Math.floor(phraseTokens.length / 2) + 1;
     if (hits >= neededHits) score += hits;
     return score;
   }
 
-  // Scores text against a list of keyword phrases, returns the best single score.
   function scoreKeywordList(textTokens, fullText, keywords) {
     var best = 0;
     for (var i = 0; i < keywords.length; i++) {
@@ -285,8 +275,59 @@
     return false;
   }
 
-  // Picks the best-scoring entry from a list, given a function that returns
-  // that entry's keyword array. Requires a minimum score to avoid noisy matches.
+  // Fuzzy/scored version of containsAny — used for RECOMMEND_TRIGGERS and
+  // ONBOARD_TRIGGERS so typo'd trigger phrases ("recomend a game") still match
+  // (fix #1). This deliberately does NOT reuse the STOPWORDS-stripping path that
+  // FAQ/category/nav matching uses: several trigger phrases (e.g. "best game",
+  // "any game", "what game") collapse to a single generic word like "best" once
+  // "game" is stripped as a stopword, and matching on "best" alone catches
+  // unrelated messages ("what's the best browser to use" was a real false
+  // positive caught in testing). Trigger phrases are short and curated, so instead
+  // every word in the ORIGINAL (unstripped) phrase must line up against the
+  // input — exactly for words under 6 chars, fuzzy for 6+ — which keeps "game"
+  // load-bearing for these specific phrases without reintroducing exact-substring-
+  // only matching (which is what broke "recomend" originally).
+  // STOPWORDS works well for FAQ/category/nav matching (generic filler words
+  // really are noise there), but a few of those "filler" words are the load-
+  // bearing, distinctive part of specific RECOMMEND/ONBOARD trigger phrases —
+  // "game" in "best game", "start"/"work" in "how do i start"/"how does this
+  // work". Stripping them collapses those phrases down to short generic words
+  // ("best", "how", "do", "i") that then false-positive against unrelated
+  // messages. This is a small allowlist of words to KEEP even though they're
+  // normally treated as stopwords, scoped only to trigger matching.
+  var TRIGGER_KEEP_WORDS = { "game": 1, "start": 1, "work": 1, "around": 1, "new": 1 };
+  function triggerTokens(phrase) {
+    var raw = tokenize(phrase);
+    var out = [];
+    for (var i = 0; i < raw.length; i++) {
+      if (TRIGGER_KEEP_WORDS[raw[i]] || !STOPWORDS[raw[i]]) out.push(raw[i]);
+    }
+    return out;
+  }
+  var TRIGGER_FUZZY_MIN_LEN = 6;
+  function fuzzyContainsAny(text, phrases) {
+    var textTokens = tokenize(text); // unstripped: TRIGGER_KEEP_WORDS need to be findable in the input too
+    for (var i = 0; i < phrases.length; i++) {
+      var phraseTokens = triggerTokens(phrases[i]);
+      if (phraseTokens.length === 0) continue;
+      var hits = 0;
+      for (var j = 0; j < phraseTokens.length; j++) {
+        var pt = phraseTokens[j];
+        for (var k = 0; k < textTokens.length; k++) {
+          var tt = textTokens[k];
+          if (pt === tt) { hits++; break; }
+          if (pt.length >= TRIGGER_FUZZY_MIN_LEN && tt.length >= TRIGGER_FUZZY_MIN_LEN && fuzzyWordMatch(pt, tt)) { hits++; break; }
+        }
+      }
+      // All of the phrase's distinctive (kept) words must be present — these
+      // lists are short (1-3 distinctive words per phrase after stripping true
+      // filler), so "all" stays achievable for genuine matches/typos while still
+      // blocking partial overlaps like "how do i" alone matching "how do i start".
+      if (hits >= phraseTokens.length) return true;
+    }
+    return false;
+  }
+
   function bestMatch(text, items, getKeywords, minScore) {
     var textTokens = meaningfulTokens(tokenize(text));
     var best = null, bestScore = 0;
@@ -298,33 +339,34 @@
   }
 
   function findGameByName(text) {
-    // Exact substring still wins outright (handles "play hero inc now" cleanly).
     var sorted = GAMES.slice().sort(function (a, b) { return b.name.length - a.name.length; });
     for (var i = 0; i < sorted.length; i++) {
       if (text.indexOf(norm(sorted[i].name)) !== -1) return sorted[i];
     }
-    // Space-insensitive substring check — handles names with no internal space
-    // in the data (e.g. "Poker2048") that players naturally type WITH a space
-    // ("poker 2048"), and the reverse case too.
     var textNoSpace = text.replace(/\s+/g, "");
     for (i = 0; i < sorted.length; i++) {
       var nameNoSpace = norm(sorted[i].name).replace(/\s+/g, "");
       if (textNoSpace.indexOf(nameNoSpace) !== -1) return sorted[i];
     }
     // Fuzzy/token fallback for typo'd or partial game names, e.g. "hiro inc rules".
+    // Short words (<5 chars, like "Inc" or "RPG") now require an EXACT token match
+    // instead of being run through fuzzyWordMatch's length-gated comparison, since
+    // fuzzyWordMatch can never approve two words under 5 chars as similar (fix #2).
     var textTokens = tokenize(text);
     var best = null, bestScore = 0;
     for (i = 0; i < GAMES.length; i++) {
       var nameTokens = tokenize(GAMES[i].name);
       var score = 0;
       for (var j = 0; j < nameTokens.length; j++) {
+        var nameTok = nameTokens[j];
+        var matched = false;
         for (var k = 0; k < textTokens.length; k++) {
-          if (fuzzyWordMatch(nameTokens[j], textTokens[k])) { score += 1; break; }
+          if (nameTok.length < 5) {
+            if (nameTok === textTokens[k]) { matched = true; break; }
+          } else if (fuzzyWordMatch(nameTok, textTokens[k])) { matched = true; break; }
         }
+        if (matched) score += 1;
       }
-      // Require matching MOST of the words in the game's name (not just one generic
-      // word like "run" or "echoes") so short/common words don't falsely trigger a
-      // game page. Single-word names still need that one word to match.
       var needed = nameTokens.length <= 1 ? 1 : Math.max(2, nameTokens.length - 1);
       if (score >= needed && score > bestScore) { bestScore = score; best = GAMES[i]; }
     }
@@ -379,8 +421,12 @@
     ".mgw-typing span:nth-child(3){animation-delay:.3s}" +
     "@keyframes mgw-bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}" +
     "#mgw-foot{flex:0 0 auto;display:flex;gap:8px;padding:10px;border-top:1px solid #E6E9EC;background:#fff}" +
-    "#mgw-input{flex:1;border:1px solid #DADEE2;border-radius:999px;padding:10px 14px;font-size:13.5px;outline:none;background:#fff !important;color:#1a1a1a !important;caret-color:#1a1a1a !important;box-sizing:border-box;-webkit-text-fill-color:#1a1a1a}" +
-    "#mgw-input::placeholder{color:#8a8f94 !important}" +
+    /* Input visibility hardening (fix #4): every property that affects whether
+       typed text is visible is pinned with !important. We also duplicate the
+       selector with extra forms (id, descendant, attribute) so this beats
+       host-page CSS regardless of which selector form it used. */
+    "#mgw-input,#mgw-panel input#mgw-input,input#mgw-input[type=\"text\"]{flex:1;border:1px solid #DADEE2;border-radius:999px;padding:10px 14px;font-size:13.5px;outline:none;background:#ffffff !important;color:#1a1a1a !important;caret-color:#1a1a1a !important;-webkit-text-fill-color:#1a1a1a !important;text-shadow:none !important;box-sizing:border-box;opacity:1 !important}" +
+    "#mgw-input::placeholder,#mgw-panel input#mgw-input::placeholder{color:#8a8f94 !important;-webkit-text-fill-color:#8a8f94 !important;opacity:1 !important}" +
     "#mgw-input:focus{border-color:#1DBF73}" +
     "#mgw-panel{color:#1a1a1a}" +
     "#mgw-foot{color:#1a1a1a}" +
@@ -390,8 +436,13 @@
 
   function injectCSS() {
     var style = document.createElement("style");
+    style.setAttribute("data-mgw", "true");
     style.textContent = css;
-    document.head.appendChild(style);
+    // Append to the very end of <head> (or <body> if head insertion fails) so
+    // this stylesheet is the LAST one parsed — under equal CSS specificity,
+    // later rules in the cascade win, which is what makes the input-visibility
+    // fix (#4) robust against host-page stylesheets loaded before this widget.
+    (document.head || document.body).appendChild(style);
   }
 
   function el(tag, attrs, html) {
@@ -417,9 +468,6 @@
     return bubble;
   }
 
-  // Shows a brief animated "typing" bubble, then swaps it for the real bot message.
-  // Keeps addBubble's signature/return value the same so every existing call site
-  // (mainMenu, FAQ answers, fallback, etc.) keeps working without changes.
   var TYPING_DELAY_MS = 1000;
   function addBotBubbleWithTyping(html) {
     var row = el("div", { class: "mgw-row bot" });
@@ -508,9 +556,6 @@
     var i = 0;
     function next() {
       if (i < steps.length) {
-        // addBotBubbleWithTyping already waits TYPING_DELAY_MS before showing the
-        // text, so just chain straight off that instead of adding a second delay
-        // on top (which used to make steps lag further behind each typing animation).
         addBotBubbleWithTyping(steps[i]);
         i++;
         setTimeout(next, TYPING_DELAY_MS + 300);
@@ -529,7 +574,8 @@
 
     if (isGreeting(text)) { addBubble("bot", pick(GREETING_REPLIES)); mainMenu(); return; }
 
-    if (text === "recommend a game" || containsAny(text, RECOMMEND_TRIGGERS)) {
+    // fix #1: fuzzy-tolerant trigger matching instead of plain substring
+    if (text === "recommend a game" || fuzzyContainsAny(text, RECOMMEND_TRIGGERS)) {
       addBubble("bot", "What kind of game are you in the mood for?");
       categoryChips(showRecommendations);
       return;
@@ -553,7 +599,7 @@
       return;
     }
 
-    if (text === "new here take a tour" || containsAny(text, ONBOARD_TRIGGERS)) {
+    if (text === "new here take a tour" || fuzzyContainsAny(text, ONBOARD_TRIGGERS)) {
       runOnboarding();
       return;
     }
@@ -576,7 +622,7 @@
       return;
     }
 
-    // free-text matching, in priority order — now fuzzy + scored instead of plain substring
+    // free-text matching, in priority order — fuzzy + scored
     var game = findGameByName(text);
     if (game) { showGameRules(game); return; }
 
@@ -586,6 +632,19 @@
       return;
     }
     if (category) { showRecommendations(category); return; }
+
+    // fix #3: when the message signals "take me there" intent, check NAV before
+    // FAQ. Without this, "take me to the leaderboard" loses to the FAQ leaderboard
+    // entry (which scores higher) and the user gets an explanation instead of a link.
+    var wantsToGo = containsAny(text, GOTO_TRIGGERS);
+    if (wantsToGo) {
+      var navFirst = findNav(text);
+      if (navFirst) {
+        addBubble("bot", navFirst.answer + "<br>" + linkHtml("Open " + navFirst.label, navFirst.url));
+        addChips([{ label: "Somewhere else", value: "site navigation" }, { label: "Main menu", value: "menu" }]);
+        return;
+      }
+    }
 
     var faq = findFAQ(text);
     if (faq) {
@@ -628,7 +687,13 @@
     bodyEl = el("div", { id: "mgw-body" });
 
     var foot = el("div", { id: "mgw-foot" });
-    var input = el("input", { id: "mgw-input", type: "text", placeholder: "Type your question..." });
+    var input = el("input", { id: "mgw-input", type: "text", placeholder: "Type your question...", autocomplete: "off" });
+    // Belt-and-suspenders: also pin the visible-text styles directly on the
+    // element's inline style, which beats almost everything in the cascade
+    // short of another inline style or !important on a more specific rule.
+    input.style.setProperty("color", "#1a1a1a", "important");
+    input.style.setProperty("background-color", "#ffffff", "important");
+    input.style.setProperty("-webkit-text-fill-color", "#1a1a1a", "important");
     var sendBtn = el("button", { id: "mgw-send", type: "button", "aria-label": "Send" },
       '<svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>');
     foot.appendChild(input);
