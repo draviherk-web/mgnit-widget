@@ -1,8 +1,26 @@
 /*!
- * Mags — MGNIT Gaming free support widget (v2.2 — input-visibility + timing fix)
+ * Mags — MGNIT Gaming free support widget (v2.3 — expanded game library)
  * Rule-based, runs fully in the browser. No AI/API calls, no backend, no cost.
- * Install: paste <script src="mgnit-mags-widget.js?v=2.2"></script> right before </body>
+ * Install: paste <script src="mgnit-mags-widget.js?v=2.3"></script> right before </body>
  * Edit: update the GAMES / CATEGORIES / FAQS / NAV arrays below to add or change content.
+ *
+ * v2.3 changes:
+ *  - Expanded GAMES from 18 to 43 entries, pulled directly from the live homepage
+ *    (Featured / Arcade / Puzzles / Hypercasual / Adventure / Action / Kids rows)
+ *    on mgnitgaming.com as of June 2026, so the rules a player most likely asks
+ *    about (e.g. "how do I play Tic Tac Toe") now have a real entry instead of
+ *    falling through to a generic category answer.
+ *  - Added "Super Tris Tic Tac Toe" — confirmed live in the Puzzles category and
+ *    in Recently Added on the homepage.
+ *  - NOTE: rules for the newly added games are written from the game's title,
+ *    cover description, and standard mechanics for that game genre (e.g. match-3,
+ *    tower defense, endless runner) — NOT from personally play-testing each one.
+ *    Recommend spot-checking a handful of the new entries against the live game
+ *    before calling this final, in case any title's actual mechanics differ from
+ *    what the name/genre implies.
+ *  - Did NOT add "Sins and Desires" or "Beaten Trump Face LOL" — both are still
+ *    live on the site as of this update and are a separate brand-safety issue,
+ *    not something to give players gameplay help for.
  *
  * v2.2 changes:
  *  - FIX: typed text in the input box could be invisible while typing (only the
@@ -19,7 +37,7 @@
  *    reply reads as a sequence (typing -> message -> options) instead of
  *    everything popping in at once, which could read as "instant".
  *  - Added a console.log version marker on load — open DevTools > Console on the
- *    live site and confirm it says v2.2. If it doesn't, the browser/CDN is still
+ *    live site and confirm it says v2.3. If it doesn't, the browser/CDN is still
  *    serving an older cached copy of this file (see install note above: always
  *    load this script with a version query string and bump it on every update,
  *    otherwise browsers/CDNs can keep serving the old file indefinitely).
@@ -40,13 +58,14 @@
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v2.2");
+  console.log("Mags widget loaded — v2.3");
 
   var SITE = "https://mgnitgaming.com";
 
   /* ---------------- KNOWLEDGE BASE ---------------- */
 
   var GAMES = [
+    /* ---- Original 18 ---- */
     { name: "Hero Inc", slug: "hero-inc", category: "adventure",
       rules: "Use the keyboard or on-screen controls to move your hero through each 3D level. Explore the map, fight enemies in real-time combat, and pick up items or skills as you go. Defeat the level's boss or reach the exit to clear the stage and unlock the next one." },
     { name: "Neon Pong", slug: "neon-pong", category: "arcade",
@@ -82,34 +101,202 @@
     { name: "Diamont", slug: "diamont", category: "kids",
       rules: "A simple collect-and-avoid game for younger players — guide your character to gather diamonds while steering clear of hazards. Collect the target number of diamonds, or reach the end of the level, to win." },
     { name: "What Number is it?", slug: "what-number-is-it", category: "kids",
-      rules: "A number-recognition mini-game — look at the number or pattern shown and tap the matching answer. Answer correctly to move to the next round." }
+      rules: "A number-recognition mini-game — look at the number or pattern shown and tap the matching answer. Answer correctly to move to the next round." },
+
+    /* ---- Added in v2.3 — pulled from live homepage, June 2026 ---- */
+
+    // Featured
+    { name: "Halloween Blocks", slug: "halloween-blocks", category: "puzzles",
+      rules: "A Tetris-style stacking game with a Halloween theme. Falling blocks drop from the top — rotate and move them with the arrow keys or on-screen controls to complete full horizontal lines. Completed lines clear and score points; the game ends if the blocks stack up to the top." },
+    { name: "Rocket Jigsaw Picture Puzzle", slug: "rocket-jigsaw-picture-puzzle", category: "board",
+      rules: "A sliding picture puzzle — drag puzzle pieces into their correct spot to reassemble the full rocket-themed image. The puzzle is complete once every piece is in its right place." },
+    { name: "Bio Zone", slug: "bio-zone", category: "action",
+      rules: "A tower-defense game — place and merge weapon turrets along the path to stop waves of zombies before they reach your base. Merging two of the same weapon creates a stronger one. Survive every wave to clear the level." },
+    { name: "Metal Match", slug: "metal-match", category: "puzzles",
+      rules: "A match-3 puzzle with a chemistry/metals theme. Swap adjacent tiles to line up 3 or more matching elements in a row or column to clear them and score points. Reach the level's target score before you run out of moves." },
+    { name: "Knife Target Practice", slug: "knife-target-practice", category: "arcade",
+      rules: "Aim and throw knives at the spinning target using the mouse or tap. Land your knife on the target without hitting a previously thrown one. The more accurate and consistent your throws, the higher your score." },
+    { name: "Battle of Tank Steel", slug: "battle-of-tank-steel-6803344d80c39", category: "action",
+      rules: "Control a tank with the on-screen or arrow-key controls — move and aim independently, then fire to destroy enemy tanks while avoiding their shots. Clear each stage by defeating all enemies before your own tank is destroyed." },
+    { name: "Bakery Chefs Shop", slug: "bakery-chefs-shop", category: "casual",
+      rules: "A time-management cooking game — follow each customer's order, prepare the requested baked goods by clicking through the steps, and serve them before the order timer runs out. Serve correctly and quickly to earn more stars and coins." },
+    { name: "Simply Breakout", slug: "simply-breakout", category: "arcade",
+      rules: "A classic Breakout-style game — move the paddle with the mouse, touch, or arrow keys to bounce the ball into the brick wall above. Clear every brick on the screen without letting the ball fall past your paddle to complete the level." },
+    { name: "Jump Arrow", slug: "jump-arrow", category: "hypercasual",
+      rules: "A one-tap timing game — tap to launch your character along a path of arrows, matching the arrow's direction at the right moment to keep moving forward. Misjudging the timing ends the run, so the goal is to travel as far as possible." },
+    { name: "Find The Missing Part", slug: "find-the-missing-part", category: "puzzles",
+      rules: "Look at the image shown and identify which piece is missing from a set of options. Tap or click the correct missing piece to complete the picture and move to the next round." },
+    { name: "Skibidi Toilet Moto Bike Racing", slug: "skibidi-toilet-moto-bike-racing", category: "action",
+      rules: "A motorbike racing game — use the arrow keys or on-screen controls to accelerate, brake, and balance your bike across ramps and obstacle-filled tracks. Reach the finish line as fast as possible without crashing to set your best time." },
+    { name: "Akochan Quest", slug: "akochan-quest", category: "adventure",
+      rules: "An adventure platformer — guide Akochan through each level, jumping over obstacles and avoiding enemies while collecting items along the way. Reach the end of each stage to progress to the next." },
+
+    // Arcade
+    { name: "Space Ark Shooter", slug: "space-ark-shooter", category: "arcade",
+      rules: "A classic space shooter — move your ship with the arrow keys or touch controls and fire at incoming enemy ships and asteroids. Destroy enemies for points while dodging their fire; losing all your lives ends the run." },
+    { name: "Arcanoid Space Defense", slug: "arcanoid-space-defense", category: "arcade",
+      rules: "A Breakout/Arkanoid-style game set in space — move your paddle to bounce the ball into rows of enemy blocks above. Clear every block without letting the ball pass your paddle to complete each level." },
+    { name: "Fireball Dodge", slug: "fireball-dodge", category: "arcade",
+      rules: "A reflex survival game — move your character left and right (or up and down) to dodge incoming fireballs. The longer you survive without getting hit, the higher your score." },
+    { name: "Family Squid Challenge", slug: "family-squid-challenge", category: "arcade",
+      rules: "A series of mini-challenge games inspired by popular survival-competition shows. Follow each round's specific instructions (timing, precision, or reaction-based) and avoid elimination to advance to the next challenge." },
+    { name: "Passing master 3D", slug: "passing-master-3d", category: "arcade",
+      rules: "A sports passing-accuracy game — aim and time your pass toward the target player or zone shown on screen. Land accurate passes to score points and progress through increasingly tricky levels." },
+    { name: "Explosive speed", slug: "explosive-speed", category: "arcade",
+      rules: "A fast-paced racing/reflex game — control your vehicle or character at high speed, reacting quickly to obstacles as they appear. Survive or finish the course as fast as possible for your best score." },
+    { name: "Precise shooting", slug: "precise-shooting", category: "arcade",
+      rules: "An aim-and-shoot accuracy game — line up your shot on the moving or stationary target and fire at the right moment. The more accurate your shots, the higher your score." },
+    { name: "Long neck", slug: "long-neck", category: "hypercasual",
+      rules: "A one-tap stretching/balance game — tap to extend your character's long neck to reach targets or avoid hazards, timing each stretch carefully. Misjudging a stretch ends the run, so the goal is the highest score before that happens." },
+    { name: "Cowboy Runners Dash", slug: "cowboy-runners-dash", category: "action",
+      rules: "An endless runner with a cowboy/western theme — tap, click, or use the arrow keys to run, jump, and slide past obstacles automatically appearing on the track. Collect coins along the way; hitting an obstacle ends the run." },
+    { name: "Tactical Conquest", slug: "tactical-conquest", category: "action",
+      rules: "A strategy/tactics game — position and command your units on the map, then plan your moves to defeat the enemy force or capture their territory. Think a few moves ahead, since the AI opponent reacts to your strategy." },
+    { name: "ZigZag Animal Road", slug: "zigzag-animal-road", category: "hypercasual",
+      rules: "A one-tap timing game — tap to make your animal character turn at each zigzag corner of the path. Time your taps correctly to keep moving forward without falling off the track." },
+
+    // Puzzles
+    { name: "Super Tris Tic Tac Toe", slug: "super-tris-tic-tac-toe", category: "puzzles",
+      rules: "A classic Tic Tac Toe (Noughts and Crosses) game, playable solo against the computer or with a friend. Take turns placing your X or O on the 3x3 grid — the first to line up three of their own symbol in a row, column, or diagonal wins. If the grid fills up with no line completed, it's a draw." },
+    { name: "Brainrot Garden. Merge Cats", slug: "brainrot-garden-merge-cats", category: "puzzles",
+      rules: "A merge-puzzle game — drag two matching cat characters together on the board to merge them into a stronger, higher-value cat. Keep merging to unlock new cat types and clear space on the board, aiming for the highest-tier cat possible." },
+    { name: "Kpop Puzzle Hunters", slug: "kpop-puzzle-hunters", category: "puzzles",
+      rules: "A jigsaw-style picture puzzle with a K-pop theme. Drag the scattered pieces into their correct spots to reassemble the full image. Complete the picture to unlock the next puzzle." },
+    { name: "Tung Tung Sahur Funny Face", slug: "tung-tung-sahur-funny-face", category: "puzzles",
+      rules: "A lighthearted spot-the-difference or matching puzzle — compare the images or faces shown and click on the correct matches or differences before time runs out (if a timer is set) to clear each round." },
+    { name: "Classic Checkers: Forest", slug: "classic-checkers-forest", category: "board",
+      rules: "Standard Checkers (Draughts) rules on an 8x8 board with a forest theme. Move your pieces diagonally one square at a time, jumping over an opponent's piece to capture it. Reach the opposite end of the board to crown a piece as a King, which can move diagonally in any direction. Win by capturing all of your opponent's pieces or blocking every legal move they have." },
+    { name: "Four in a Row", slug: "four-in-a-row", category: "board",
+      rules: "The classic Connect Four game. Take turns dropping a colored disc into one of the seven columns — it falls to the lowest empty spot. The first player to line up four of their own discs in a row, column, or diagonal wins." },
+    { name: "Glow Blocks", slug: "glow-blocks", category: "puzzles",
+      rules: "A block-sliding or block-placement puzzle with a glowing neon visual style. Move or rotate the blocks to fit them into the target pattern or clear full lines, depending on the level's goal, before you run out of moves." },
+    { name: "PinPoint", slug: "pinpoint", category: "puzzles",
+      rules: "A precision-aiming puzzle — line up your shot or placement to hit the exact target point shown on screen. Each level requires careful timing or angle adjustment to land precisely where needed." },
+    { name: "CANDY MATCH 3 KIT 2025", slug: "candy-match-3-kit-2025", category: "puzzles",
+      rules: "A classic match-3 candy game. Swap two adjacent candies to line up 3 or more of the same type in a row or column — matching them clears the candies and scores points, with bigger matches creating special power-up candies. Hit the level's target score within the move or time limit to win." },
+    { name: "Koko Loco Block Blast", slug: "koko-loco-block-blast", category: "puzzles",
+      rules: "A block-blast puzzle — drag the given block shapes onto the grid to fill complete rows or columns. Completing a line clears it and scores points; the game ends when no more blocks can be placed on the board." },
+    { name: "Square Sort Mania", slug: "square-sort-mania", category: "puzzles",
+      rules: "A sorting puzzle — drag colored squares into the matching colored container or zone before the level's move or time limit runs out. Sort everything correctly to clear the level and unlock the next one." },
+    { name: "WORDLY", slug: "wordly", category: "puzzles",
+      rules: "A word-guessing puzzle in the style of Wordle. You have a limited number of attempts to guess the hidden word — after each guess, the tiles show which letters are correct and in the right spot, correct but in the wrong spot, or not in the word at all. Use those clues to find the word before you run out of guesses." },
+
+    // Hypercasual
+    { name: "Lost Things", slug: "lost-things", category: "hypercasual",
+      rules: "A hidden-object game — scan the scene and tap on every item from the list shown on screen. Find everything before time runs out (if a timer is set) to clear the level." },
+    { name: "Draw a skin for Mineblock with physics", slug: "draw-a-skin-for-mineblock-with-physics", category: "hypercasual",
+      rules: "A drawing/physics sandbox — draw a custom skin or shape for your blocky character using the on-screen drawing tool, then watch it interact with the physics-based environment. There's no win/lose condition — it's a free creative sandbox." },
+    { name: "The Mobs Farm in Mineblock!", slug: "the-mobs-farm-in-mineblock", category: "hypercasual",
+      rules: "A blocky farming/management mini-game — place, feed, or manage mob characters on your farm by clicking and dragging within the grid. Complete the level's objectives (like reaching a target number of mobs or resources) to progress." },
+    { name: "Wood Cutter Clicker", slug: "wood-cutter-clicker", category: "hypercasual",
+      rules: "An idle clicker game — click repeatedly to chop wood and earn currency, then spend it on upgrades that increase how much wood you collect per click or automatically over time. There's no fixed end — the goal is to grow your wood total and upgrades as high as possible." },
+    { name: "Geometry Dash: Ultra Mega MOD Playground!", slug: "geometry-dash-ultra-mega-mod-playground", category: "hypercasual",
+      rules: "A rhythm-based platformer in the Geometry Dash style — tap or click to jump your character automatically forward through a level full of spikes and obstacles timed to the music. One hit ends the run, so the goal is to memorize the level and reach the end without crashing." },
+    { name: "Color 3D Bump it Up", slug: "color-3d-bump-it-up", category: "hypercasual",
+      rules: "A 3D ball-rolling game — guide your ball along the track, bumping into color-matched obstacles to grow bigger while avoiding mismatched colors that shrink you. Reach the finish line as large as possible." },
+    { name: "Magic Farm : Clicker", slug: "magic-farm-clicker", category: "hypercasual",
+      rules: "An idle/clicker farming game — click to plant, grow, and harvest magical crops, earning currency you can spend on upgrades to grow and harvest faster. There's no fixed ending — the goal is to build the biggest, most efficient farm." },
+    { name: "Runaway The Truck", slug: "runaway-the-truck", category: "hypercasual",
+      rules: "An endless driving/dodging game — steer your truck left and right to avoid oncoming traffic and obstacles on the road. The longer you survive without crashing, the higher your score." },
+    { name: "Tropical Tidy", slug: "tropical-tidy", category: "hypercasual",
+      rules: "A relaxing sorting/tidying game with a tropical theme — drag items into their correct spot or matching zone to tidy up the scene. Complete each scene to unlock the next one." },
+    { name: "Coral Adventure", slug: "coral-adventure", category: "hypercasual",
+      rules: "An underwater exploration game — guide your character through the coral reef, collecting items and avoiding hazards as you swim. Reach the end of each level to progress to the next area." },
+    { name: "Infinity Roll 3D", slug: "infinity-roll-3d", category: "hypercasual",
+      rules: "A 3D rolling-ball runner — your ball moves forward automatically; steer left and right to stay on the path and avoid falling off the edge or hitting obstacles. The further you go without falling, the higher your score." },
+    { name: "Ghoul Fusion", slug: "ghoul-fusion", category: "hypercasual",
+      rules: "A merge game with a spooky theme — drag two matching ghoul characters together to fuse them into a stronger version. Keep merging to unlock higher-tier ghouls and clear space on the board." },
+
+    // Adventure
+    { name: "Ultimate Bottle Flip Game", slug: "ultimate-bottle-flip-game", category: "adventure",
+      rules: "Time your tap or click to flip the bottle through the air so it lands upright on the target surface. Landing successfully scores points and moves you to the next, often trickier, level." },
+    { name: "Fantasy Brothers", slug: "fantasy-brothers", category: "adventure",
+      rules: "An adventure/RPG game — control your fantasy character through each level, battling enemies and collecting items or gear along the way. Defeat the level's enemies or boss to progress to the next stage." },
+    { name: "Transform Battle", slug: "transform-battle", category: "adventure",
+      rules: "An action-adventure game where your character can transform between different forms, each with its own abilities. Switch forms strategically to defeat enemies and clear obstacles as you progress through each level." },
+    { name: "My Happy Farm Land Simulator", slug: "my-happy-farm-land-simulator", category: "adventure",
+      rules: "A farming simulation game — plant, water, and harvest crops, and manage your farm's resources by clicking and dragging through each task. There's no fixed ending — the goal is to grow and manage the most successful farm." },
+    { name: "Potion Path", slug: "potion-path", category: "adventure",
+      rules: "A puzzle-adventure game — guide your character along the path, collecting the right ingredients and avoiding hazards to brew the correct potion at each stage. Complete each level's potion goal to progress." },
+    { name: "Bandits Bane", slug: "bandits-bane", category: "adventure",
+      rules: "An action-adventure game — battle bandit enemies using the on-screen or keyboard controls as you make your way through each level. Defeat all enemies or reach the level's exit to clear the stage." },
+    { name: "Hero Transform Run", slug: "hero-transform-run", category: "adventure",
+      rules: "An endless runner where your hero character can transform mid-run to gain new abilities or avoid specific obstacles. Tap or click to run, jump, and transform at the right moments to travel as far as possible." },
+    { name: "Modern Bus Driving Game", slug: "modern-bus-driving-game", category: "adventure",
+      rules: "A bus driving simulator — use the on-screen or arrow-key controls to accelerate, brake, and steer your bus along realistic city routes, following traffic rules and picking up passengers at marked stops. Complete each route safely and on time." },
+    { name: "Dystopia RPG", slug: "dystopia-rpg", category: "adventure",
+      rules: "A role-playing adventure set in a dystopian world — explore the map, take on quests, battle enemies, and collect gear or items to grow stronger. Progress by completing objectives and clearing each area's challenges." },
+    { name: "City Police Car Chase Game", slug: "city-police-car-chase-game", category: "adventure",
+      rules: "A police driving simulator — use the on-screen or arrow-key controls to chase down suspect vehicles through city streets, matching their speed and maneuvers. Successfully catch the suspect or complete each chase scenario to clear the level." },
+
+    // Action
+    { name: "Two Player Red Hands Game", slug: "two-player-red-hands-game", category: "action",
+      rules: "A two-player reflex game based on the classic 'Red Hands' slap game, played on one device. One player places their hands under the other's, then tries to slap them before the other player can pull their hands away. Take turns being the slapper and the dodger — fastest reactions win each round." },
+    { name: "space io", slug: "space-io", category: "action",
+      rules: "A multiplayer .io-style space game — pilot your ship around the map, collecting resources and growing stronger while avoiding or battling other players' ships. Survive and grow as large/powerful as possible; getting destroyed usually ends your run and you start over." },
+    { name: "Tanks of War Halloween", slug: "tanks-of-war-halloween", category: "action",
+      rules: "A tank battle game with a Halloween theme — move and aim your tank independently using the on-screen or keyboard controls, firing at enemy tanks while dodging their shots. Destroy all enemies in the level to win the stage." },
+    { name: "Pusha Pusha", slug: "pusha-pusha", category: "action",
+      rules: "A pushing/puzzle-action game — push blocks or objects around the level to clear a path, solve the stage's objective, or push enemies into hazards. Complete each level's goal to unlock the next one." },
+    { name: "3D Tower Defense", slug: "3d-tower-defense", category: "action",
+      rules: "A tower-defense strategy game — place defensive towers along the path in a 3D environment to stop waves of enemies from reaching your base. Earn currency from defeated enemies to build and upgrade more towers between waves. Survive every wave to win." },
+    { name: "Fall Skibidi Toilet", slug: "fall-skibidi-toilet", category: "action",
+      rules: "A 'fall guys'-style obstacle race — guide your character through a course of moving platforms and obstacles, trying not to fall off, to reach the finish line. The fastest, most careful run gets the best result." },
+    { name: "Rogue Runner", slug: "rogue-runner", category: "action",
+      rules: "An endless runner with roguelike elements — tap, click, or use the arrow keys to run, jump, and dodge obstacles automatically appearing ahead. Collect power-ups along the way; hitting an obstacle ends the run, so the goal is the longest distance or highest score." },
+    { name: "Noob vs Pro But Knife Hit Minecraft", slug: "noob-vs-pro-but-knife-hit-minecraft", category: "action",
+      rules: "A knife-throwing accuracy game with a Minecraft-style theme — tap or click at the right moment to throw your knife into the spinning wooden target without hitting a knife you've already thrown. Land enough knives to clear the level." },
+    { name: "Stick Warrior", slug: "stick-warrior", category: "action",
+      rules: "A stick-figure combat game — use the on-screen or keyboard controls to attack, block, and dodge as you battle enemy stick warriors. Defeat all enemies in the level to progress to the next stage." },
+
+    // Kids
+    { name: "Choose Puzzle", slug: "choose-puzzle", category: "kids",
+      rules: "A simple jigsaw puzzle picker for younger players — choose an image, then drag the puzzle pieces into their correct spots to complete the picture. There's no time pressure, so kids can go at their own pace." },
+    { name: "Funny Animal Faces", slug: "funny-animal-faces", category: "kids",
+      rules: "A fun mix-and-match game — combine different animal face parts (eyes, ears, noses) by clicking through the options to create silly animal combinations. There's no win/lose condition — it's a creative, free-play activity." },
+    { name: "Black Panther Mask Coloring Pages", slug: "black-panther-mask-coloring-pages", category: "kids",
+      rules: "A digital coloring book page — pick a color from the palette and click or tap on sections of the mask outline to fill them in. There's no time limit or scoring — it's a free creative coloring activity." },
+    { name: "Santa Girl Running", slug: "santa-girl-running-6803344e10994", category: "kids",
+      rules: "An endless runner with a festive theme — tap, click, or use the arrow keys to run, jump, and dodge obstacles automatically appearing on the track. Collect items along the way; hitting an obstacle ends the run, so the goal is to run as far as possible." },
+    { name: "Resize Mahjong", slug: "resize-mahjong", category: "kids",
+      rules: "A Mahjong tile-matching game — click two identical, unblocked tiles to remove them from the board. Clear all the tiles from the layout to win the level." },
+    { name: "Pets Puzzle", slug: "pets-puzzle", category: "kids",
+      rules: "A pet-themed jigsaw puzzle — drag the scattered pieces into their correct spot to reassemble the full picture of the pet. Complete the picture to unlock the next one." },
+    { name: "Cute Jelly Rush", slug: "cute-jelly-rush", category: "kids",
+      rules: "A match-3 style puzzle with cute jelly characters — swap adjacent jellies to line up 3 or more of the same type to clear them and score points. Reach the level's target score before running out of moves." },
+    { name: "Find Seven Differences", slug: "find-seven-differences", category: "kids",
+      rules: "A classic spot-the-difference game — two similar images are shown side by side. Click each of the seven spots where they differ to clear the level and move to the next picture." },
+    { name: "Chubsee", slug: "chubsee", category: "kids",
+      rules: "A simple character-based mini-game for younger players — guide the Chubsee character through the level, collecting items and avoiding obstacles using easy click or tap controls. Reach the end of the level to clear it." },
+    { name: "15 Puzzle - Collect a picture", slug: "15-puzzle-collect-a-picture", category: "kids",
+      rules: "The classic 15-puzzle sliding game — slide numbered or pictured tiles into the single empty space, one at a time, to reassemble the full picture or correct number order. There's no time pressure — take as many moves as you need." }
   ];
 
   var CATEGORIES = [
     { key: "arcade", label: "Arcade", keywords: ["arcade", "arcad", "arkade"],
       rules: "Arcade games are quick, skill-based games played with mouse, touch, or arrow keys. The goal is usually to score as many points as possible or survive as long as you can.",
-      picks: ["neon-pong", "all-golf", "pixcade-2-player-escape"] },
+      picks: ["neon-pong", "all-golf", "knife-target-practice"] },
     { key: "puzzles", label: "Puzzles", keywords: ["puzzle", "puzzles", "match-3", "match 3", "match3", "puzzel", "puzzal", "brain game", "brain teaser"],
       rules: "Puzzle games are about logic and pattern-solving. You'll match, sort, slide, or rearrange pieces to meet each level's goal within a limited number of moves or amount of time.",
-      picks: ["candy-ice-cream-crush-6803344d99ba5", "poker2048", "anime-find-the-differences"] },
+      picks: ["super-tris-tic-tac-toe", "candy-match-3-kit-2025", "wordly"] },
     { key: "hypercasual", label: "Hypercasual", keywords: ["hypercasual", "hyper casual", "hyper-casual", "hyper", "one tap", "one-tap"],
       rules: "Hypercasual games use one-tap or one-swipe controls. The goal is usually to survive, travel as far as possible, or repeat an action correctly to set a new high score.",
-      picks: ["bounceshift", "the-dry-rains"] },
+      picks: ["bounceshift", "jump-arrow", "infinity-roll-3d"] },
     { key: "adventure", label: "Adventure", keywords: ["adventure", "adventur", "story game", "rpg"],
       rules: "Adventure games let you control a character through levels or a story — fighting enemies, solving challenges, and collecting items. Progress by completing each level's objective.",
-      picks: ["hero-inc", "claritas-dungeon-crawler-rpg-demo"] },
+      picks: ["hero-inc", "dystopia-rpg", "city-police-car-chase-game"] },
     { key: "action", label: "Action", keywords: ["action", "fighting", "combat", "shooter", "racing", "race game"],
       rules: "Action games are fast-paced — combat, racing, or quick-reflex challenges. The goal is usually to defeat opponents, finish a course, or survive a level while avoiding damage.",
-      picks: ["crowd-runners-3d", "bus-parking-unblocked", "abyssal-echoes"] },
+      picks: ["crowd-runners-3d", "bio-zone", "3d-tower-defense"] },
     { key: "kids", label: "Kids", keywords: ["kid", "kids", "child", "children", "for kids", "kid friendly", "kid-friendly", "toddler"],
       rules: "Kids games use very simple, friendly controls — tap, click, or drag. They focus on matching, coloring, counting, or simple obstacle courses, with no violence.",
-      picks: ["diamont", "what-number-is-it"] },
+      picks: ["diamont", "find-seven-differences", "black-panther-mask-coloring-pages"] },
     { key: "casual", label: "Casual", keywords: ["casual", "relaxing", "relaxed", "chill game", "easy game"],
       rules: "Casual games are easy to pick up — swap, tap, or run to match items or clear obstacles. Built for short, relaxed play sessions, no prior gaming experience needed.",
-      picks: ["juicy-run"] },
-    { key: "board", label: "Board", keywords: ["board", "card game", "cards", "solitaire", "boardgame"],
-      rules: "Board games follow the same rules as their classic tabletop versions, like solitaire or checkers, just played digitally with click or tap controls.",
-      picks: ["algerian-solitaire"] }
+      picks: ["juicy-run", "bakery-chefs-shop"] },
+    { key: "board", label: "Board", keywords: ["board", "card game", "cards", "solitaire", "boardgame", "checkers", "chess", "connect four", "connect 4"],
+      rules: "Board games follow the same rules as their classic tabletop versions, like checkers, solitaire, or Connect Four, just played digitally with click or tap controls.",
+      picks: ["algerian-solitaire", "classic-checkers-forest", "four-in-a-row"] }
   ];
 
   var FAQS = [
@@ -161,9 +348,6 @@
   ];
 
   function isGreeting(text) {
-    // Treat as a greeting only if the message is SHORT and made up of greeting
-    // words (plus minor punctuation/typos) \u2014 so "hi" and "hey there" count, but
-    // "hi, how do i reset my password" still falls through to real matching.
     var words = tokenize(text);
     if (words.length === 0 || words.length > 3) return false;
     var greetingKeys = Object.keys(GREETING_WORDS);
@@ -173,11 +357,6 @@
       var fuzzyHit = false;
       for (var j = 0; j < greetingKeys.length; j++) {
         if (fuzzyWordMatch(words[i], greetingKeys[j])) { fuzzyHit = true; break; }
-        // fuzzyWordMatch only kicks in at 5+ chars; greeting words/typos are
-        // almost always shorter than that ("hi"/"hey"/"helo"/"hii"/"sup"), so
-        // handle the short range directly with a tight Levenshtein check
-        // against this small, fixed dictionary (low collision risk since
-        // there are only ~12 candidates, unlike general vocabulary matching).
         if (words[i].length <= 5 && greetingKeys[j].length <= 5 && levenshtein(words[i], greetingKeys[j]) <= 1) { fuzzyHit = true; break; }
       }
       if (!fuzzyHit) return false;
@@ -185,7 +364,6 @@
     return true;
   }
 
-  // Friendlier varied phrasing so the bot doesn't feel like a scripted wall every time
   var FALLBACK_LINES = [
     "Hmm, I'm not totally sure on that one \u2014 but here's what I can help with:",
     "I don't have an exact answer for that yet, but maybe one of these helps:",
@@ -195,9 +373,6 @@
 
   /* ---------------- FUZZY / TOKEN MATCHING ---------------- */
 
-  // Damerau-Levenshtein edit distance — like standard Levenshtein but also treats
-  // an adjacent-letter swap (e.g. "icn" for "inc") as a single edit instead of two.
-  // That's the most common real typo pattern, so it matters for short words.
   function levenshtein(a, b) {
     if (a === b) return 0;
     var al = a.length, bl = b.length;
@@ -223,27 +398,11 @@
     return d[al][bl];
   }
 
-  // Two words are a "fuzzy match" if they're close enough relative to their length.
-  // Short words need an exact/near-exact match (avoids "a" matching everything);
-  // longer words tolerate 1-2 typo'd characters — but ONLY if they also start with
-  // the same letter. Real-world typos (fat-finger, missed key, transposition)
-  // overwhelmingly preserve the first character; requiring it eliminates most
-  // false-positive collisions between same-length-but-unrelated words (e.g.
-  // "racing"/"gaming", "offline"/"online", "appropriate"/"inappropriate") while
-  // costing almost no legitimate typo matches.
   function fuzzyWordMatch(w1, w2) {
     if (w1 === w2) return true;
-    // Words under 5 chars are too collision-prone for fuzzy tolerance — a single
-    // edit on a short word ("slow"/"show", "blog"/"log", "free"/"tree") usually
-    // lands on a completely different real word rather than a typo of the same
-    // word. Common short-word typos are instead handled by adding explicit
-    // variants to the keyword lists (e.g. "lode"/"loding" alongside "load").
     if (w1.length < 5 || w2.length < 5) return false;
     if (w1.charAt(0) !== w2.charAt(0)) return false;
     var maxLen = Math.max(w1.length, w2.length);
-    // Roughly 1 edit allowed per 4 characters — stricter than a flat "2 edits
-    // for anything under 10 chars", which was loose enough to match unrelated
-    // 6-7 letter words against each other.
     var allowed = maxLen <= 8 ? 1 : (maxLen <= 12 ? 2 : 3);
     return levenshtein(w1, w2) <= allowed;
   }
@@ -252,9 +411,6 @@
     return (text || "").toLowerCase().match(/[a-z0-9']+/g) || [];
   }
 
-  // Filler words that shouldn't count toward a fuzzy/token match score on their own —
-  // without this, generic phrases like "download the game" would score points just
-  // because the input also contains "the" and "game".
   var STOPWORDS = { "the": 1, "a": 1, "an": 1, "is": 1, "it": 1, "to": 1, "of": 1, "in": 1,
     "on": 1, "my": 1, "me": 1, "i": 1, "you": 1, "do": 1, "does": 1, "did": 1, "this": 1,
     "for": 1, "and": 1, "or": 1, "game": 1, "games": 1, "play": 1, "playing": 1, "with": 1 };
@@ -267,15 +423,7 @@
     return out;
   }
 
-  // Scores how well `text` matches a single keyword/phrase:
-  //  +2 per exact substring hit of the whole phrase (cheap win for short exact phrases)
-  //  +1 per token in the keyword phrase that fuzzy-matches a token in the input
-  // Returns a numeric score (0 = no match at all).
   function wholeWordBoundaryMatch(fullText, normPhrase) {
-    // Escape regex special chars in the phrase (keywords can contain things like
-    // "match-3" or "log-in"), then require word boundaries on both sides so a
-    // short keyword can't score just by being embedded inside a longer word
-    // (e.g. "board" inside "leaderboard", "log" inside "blog" or "catalog").
     var escaped = normPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     var re = new RegExp("\\b" + escaped + "\\b");
     return re.test(fullText);
@@ -287,7 +435,7 @@
     if (wholeWordBoundaryMatch(fullText, normPhrase)) score += 2;
 
     var phraseTokens = meaningfulTokens(tokenize(normPhrase));
-    if (phraseTokens.length === 0) return score; // pure-stopword phrase, substring hit only
+    if (phraseTokens.length === 0) return score;
 
     var hits = 0;
     for (var i = 0; i < phraseTokens.length; i++) {
@@ -295,17 +443,11 @@
         if (fuzzyWordMatch(phraseTokens[i], textTokens[j])) { hits++; break; }
       }
     }
-    // For multi-word phrases, a single overlapping word isn't enough on its own —
-    // e.g. input "no" shouldn't score against keyword "no internet" just because
-    // "no" is technically one of its two words. Require matching MORE than half
-    // the phrase's words before counting token-overlap score. Single-word phrases
-    // (most FAQ/category keywords) are unaffected — 1 of 1 still clears "more than half".
     var neededHits = phraseTokens.length === 1 ? 1 : Math.floor(phraseTokens.length / 2) + 1;
     if (hits >= neededHits) score += hits;
     return score;
   }
 
-  // Scores text against a list of keyword phrases, returns the best single score.
   function scoreKeywordList(textTokens, fullText, keywords) {
     var best = 0;
     for (var i = 0; i < keywords.length; i++) {
@@ -324,8 +466,6 @@
     return false;
   }
 
-  // Picks the best-scoring entry from a list, given a function that returns
-  // that entry's keyword array. Requires a minimum score to avoid noisy matches.
   function bestMatch(text, items, getKeywords, minScore) {
     var textTokens = meaningfulTokens(tokenize(text));
     var best = null, bestScore = 0;
@@ -337,29 +477,17 @@
   }
 
   function findGameByName(text) {
-    // Exact substring still wins outright (handles "play hero inc now" cleanly).
     var sorted = GAMES.slice().sort(function (a, b) { return b.name.length - a.name.length; });
     for (var i = 0; i < sorted.length; i++) {
       if (text.indexOf(norm(sorted[i].name)) !== -1) return sorted[i];
     }
-    // Space-insensitive substring check — handles names with no internal space
-    // in the data (e.g. "Poker2048") that players naturally type WITH a space
-    // ("poker 2048"), and the reverse case too.
     var textNoSpace = text.replace(/\s+/g, "");
     for (i = 0; i < sorted.length; i++) {
       var nameNoSpace = norm(sorted[i].name).replace(/\s+/g, "");
       if (textNoSpace.indexOf(nameNoSpace) !== -1) return sorted[i];
     }
-    // Fuzzy/token fallback for typo'd or partial game names, e.g. "hiro inc rules".
     var textTokens = tokenize(text);
     var best = null, bestScore = 0;
-    // Filler words that can appear INSIDE a game's own title but that a player
-    // would basically never bother typing ("the", "is", "it"...). Counting them
-    // toward the "words you must match" total made multi-word titles like
-    // "Anime Find The Differences" or "What Number is it?" nearly impossible to
-    // fuzzy-match, since a player typing "find the differences game" can never
-    // supply "the" as a meaningful signal. They're excluded from BOTH the score
-    // and the required-hit count below, so they can't inflate or block a match.
     var NAME_FILLER = { "the": 1, "is": 1, "it": 1, "a": 1, "an": 1, "of": 1, "this": 1 };
     for (i = 0; i < GAMES.length; i++) {
       var nameTokens = tokenize(GAMES[i].name);
@@ -370,10 +498,6 @@
           if (fuzzyWordMatch(significantTokens[j], textTokens[k])) { score += 1; break; }
         }
       }
-      // Require matching MOST of the significant words in the game's name (not
-      // just one generic word like "run" or "echoes") so short/common words
-      // don't falsely trigger a game page. Single-word names still need that
-      // one word to match.
       var needed = significantTokens.length <= 1 ? 1 : Math.max(2, significantTokens.length - 1);
       if (score >= needed && score > bestScore) { bestScore = score; best = GAMES[i]; }
     }
@@ -428,14 +552,6 @@
     ".mgw-typing span:nth-child(3){animation-delay:.3s}" +
     "@keyframes mgw-bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}" +
     "#mgw-foot{flex:0 0 auto;display:flex;gap:8px;padding:10px;border-top:1px solid #E6E9EC;background:#fff}" +
-    /* NOTE: input rules below are now scoped under #mgw-panel (two ID selectors
-       instead of one) purely to raise CSS specificity. Some host sites style
-       inputs globally with their own !important rule that has higher specificity
-       than a single-ID selector (e.g. "#root input{color:#fff !important}" beats
-       "#mgw-input{color:#1a1a1a !important}"). This alone usually fixes it, and
-       buildUI() below ALSO force-sets these same properties inline via
-       style.setProperty(prop, value, "important") as a second, stronger layer —
-       inline !important beats every external !important no matter its specificity. */
     "#mgw-panel #mgw-input{flex:1;border:1px solid #DADEE2;border-radius:999px;padding:10px 14px;font-size:13.5px;outline:none;background:#fff !important;color:#1a1a1a !important;caret-color:#1a1a1a !important;box-sizing:border-box;-webkit-text-fill-color:#1a1a1a !important}" +
     "#mgw-panel #mgw-input::placeholder{color:#8a8f94 !important}" +
     "#mgw-panel #mgw-input:focus{border-color:#1DBF73}" +
@@ -474,14 +590,7 @@
     return bubble;
   }
 
-  // Shows a brief animated "typing" bubble, then swaps it for the real bot message.
-  // Keeps addBubble's signature/return value the same so every existing call site
-  // (mainMenu, FAQ answers, fallback, etc.) keeps working without changes.
   var TYPING_DELAY_MS = 1000;
-  // Chips (quick-reply buttons) wait a bit LONGER than the message bubble so they
-  // visibly land AFTER the reply text appears instead of at the exact same moment —
-  // makes the typing -> message -> options flow actually readable instead of
-  // everything popping in together, which could feel "instant"/jarring.
   var CHIP_DELAY_MS = TYPING_DELAY_MS + 450;
   function addBotBubbleWithTyping(html) {
     var row = el("div", { class: "mgw-row bot" });
@@ -570,9 +679,6 @@
     var i = 0;
     function next() {
       if (i < steps.length) {
-        // addBotBubbleWithTyping already waits TYPING_DELAY_MS before showing the
-        // text, so just chain straight off that instead of adding a second delay
-        // on top (which used to make steps lag further behind each typing animation).
         addBotBubbleWithTyping(steps[i]);
         i++;
         setTimeout(next, TYPING_DELAY_MS + 300);
@@ -620,7 +726,6 @@
       return;
     }
 
-    // exact-key chip clicks for FAQ
     var faqByKey = FAQS.filter(function (f) { return f.key === text; })[0];
     if (faqByKey) {
       var ans = faqByKey.answer;
@@ -630,7 +735,6 @@
       return;
     }
 
-    // exact-label chip clicks for nav
     var navByLabel = NAV.filter(function (n) { return norm(n.label) === text; })[0];
     if (navByLabel) {
       addBubble("bot", navByLabel.answer + "<br>" + linkHtml("Open " + navByLabel.label, navByLabel.url));
@@ -638,11 +742,6 @@
       return;
     }
 
-    // free-text matching, in priority order — now fuzzy + scored instead of plain substring.
-    // Order: specific game name > specific FAQ topic > general category > site nav.
-    // FAQ is checked BEFORE category so a clear topic match (e.g. "is this safe for
-    // my kid" -> Kids safety FAQ) isn't swallowed by a loose category-name hit
-    // (e.g. the word "kid" also being a Kids-category keyword).
     var game = findGameByName(text);
     if (game) { showGameRules(game); return; }
 
@@ -695,15 +794,6 @@
 
     var foot = el("div", { id: "mgw-foot" });
     var input = el("input", { id: "mgw-input", type: "text", placeholder: "Type your question..." });
-    // Belt-and-suspenders fix for the "text invisible while typing" bug: some host
-    // sites load their own theme CSS that targets <input> elements with higher
-    // specificity than this widget's stylesheet (e.g. a rule like
-    // "#root input{color:#fff !important}" has an extra selector component, so it
-    // beats a plain "#mgw-input{color:#1a1a1a !important}" rule even though ours
-    // is also !important — CSS breaks specificity ties between two !important
-    // rules by specificity, not by which one loaded later). Setting the same
-    // properties here, inline, with the "important" priority flag guarantees they
-    // win over ANY external stylesheet, important or not, no matter its specificity.
     input.style.setProperty("color", "#1a1a1a", "important");
     input.style.setProperty("background-color", "#ffffff", "important");
     input.style.setProperty("-webkit-text-fill-color", "#1a1a1a", "important");
