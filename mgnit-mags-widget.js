@@ -198,9 +198,14 @@
   // longer words tolerate 1-2 typo'd characters.
   function fuzzyWordMatch(w1, w2) {
     if (w1 === w2) return true;
-    if (w1.length < 3 || w2.length < 3) return false;
+    // Words under 5 chars are too collision-prone for fuzzy tolerance — a single
+    // edit on a short word ("slow"/"show", "blog"/"log", "free"/"tree") usually
+    // lands on a completely different real word rather than a typo of the same
+    // word. Common short-word typos are instead handled by adding explicit
+    // variants to the keyword lists (e.g. "lode"/"loding" alongside "load").
+    if (w1.length < 5 || w2.length < 5) return false;
     var maxLen = Math.max(w1.length, w2.length);
-    var allowed = maxLen <= 3 ? 1 : (maxLen <= 5 ? 1 : (maxLen <= 9 ? 2 : 3));
+    var allowed = maxLen <= 5 ? 1 : (maxLen <= 9 ? 2 : 3);
     return levenshtein(w1, w2) <= allowed;
   }
 
@@ -227,18 +232,37 @@
   //  +2 per exact substring hit of the whole phrase (cheap win for short exact phrases)
   //  +1 per token in the keyword phrase that fuzzy-matches a token in the input
   // Returns a numeric score (0 = no match at all).
+  function wholeWordBoundaryMatch(fullText, normPhrase) {
+    // Escape regex special chars in the phrase (keywords can contain things like
+    // "match-3" or "log-in"), then require word boundaries on both sides so a
+    // short keyword can't score just by being embedded inside a longer word
+    // (e.g. "board" inside "leaderboard", "log" inside "blog" or "catalog").
+    var escaped = normPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    var re = new RegExp("\\b" + escaped + "\\b");
+    return re.test(fullText);
+  }
+
   function scorePhrase(textTokens, fullText, phrase) {
     var score = 0;
     var normPhrase = norm(phrase);
-    if (fullText.indexOf(normPhrase) !== -1) score += 2;
+    if (wholeWordBoundaryMatch(fullText, normPhrase)) score += 2;
 
     var phraseTokens = meaningfulTokens(tokenize(normPhrase));
     if (phraseTokens.length === 0) return score; // pure-stopword phrase, substring hit only
+
+    var hits = 0;
     for (var i = 0; i < phraseTokens.length; i++) {
       for (var j = 0; j < textTokens.length; j++) {
-        if (fuzzyWordMatch(phraseTokens[i], textTokens[j])) { score += 1; break; }
+        if (fuzzyWordMatch(phraseTokens[i], textTokens[j])) { hits++; break; }
       }
     }
+    // For multi-word phrases, a single overlapping word isn't enough on its own —
+    // e.g. input "no" shouldn't score against keyword "no internet" just because
+    // "no" is technically one of its two words. Require matching MORE than half
+    // the phrase's words before counting token-overlap score. Single-word phrases
+    // (most FAQ/category keywords) are unaffected — 1 of 1 still clears "more than half".
+    var neededHits = phraseTokens.length === 1 ? 1 : Math.floor(phraseTokens.length / 2) + 1;
+    if (hits >= neededHits) score += hits;
     return score;
   }
 
@@ -278,6 +302,14 @@
     var sorted = GAMES.slice().sort(function (a, b) { return b.name.length - a.name.length; });
     for (var i = 0; i < sorted.length; i++) {
       if (text.indexOf(norm(sorted[i].name)) !== -1) return sorted[i];
+    }
+    // Space-insensitive substring check — handles names with no internal space
+    // in the data (e.g. "Poker2048") that players naturally type WITH a space
+    // ("poker 2048"), and the reverse case too.
+    var textNoSpace = text.replace(/\s+/g, "");
+    for (i = 0; i < sorted.length; i++) {
+      var nameNoSpace = norm(sorted[i].name).replace(/\s+/g, "");
+      if (textNoSpace.indexOf(nameNoSpace) !== -1) return sorted[i];
     }
     // Fuzzy/token fallback for typo'd or partial game names, e.g. "hiro inc rules".
     var textTokens = tokenize(text);
@@ -341,9 +373,14 @@
     ".mgw-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}" +
     ".mgw-chip{background:#fff;border:1px solid #1DBF73;color:#0F6E56;border-radius:999px;padding:6px 12px;font-size:12.5px;cursor:pointer;transition:background .15s}" +
     ".mgw-chip:hover{background:#E1F5EE}" +
+    ".mgw-typing{display:flex;gap:4px;padding:12px 14px;align-items:center}" +
+    ".mgw-typing span{width:7px;height:7px;border-radius:50%;background:#B7BEC4;display:inline-block;animation:mgw-bounce 1.1s infinite ease-in-out}" +
+    ".mgw-typing span:nth-child(2){animation-delay:.15s}" +
+    ".mgw-typing span:nth-child(3){animation-delay:.3s}" +
+    "@keyframes mgw-bounce{0%,60%,100%{transform:translateY(0);opacity:.5}30%{transform:translateY(-4px);opacity:1}}" +
     "#mgw-foot{flex:0 0 auto;display:flex;gap:8px;padding:10px;border-top:1px solid #E6E9EC;background:#fff}" +
-    "#mgw-input{flex:1;border:1px solid #DADEE2;border-radius:999px;padding:10px 14px;font-size:13.5px;outline:none;background:#fff;color:#1a1a1a;caret-color:#1a1a1a;box-sizing:border-box}" +
-    "#mgw-input::placeholder{color:#8a8f94}" +
+    "#mgw-input{flex:1;border:1px solid #DADEE2;border-radius:999px;padding:10px 14px;font-size:13.5px;outline:none;background:#fff !important;color:#1a1a1a !important;caret-color:#1a1a1a !important;box-sizing:border-box;-webkit-text-fill-color:#1a1a1a}" +
+    "#mgw-input::placeholder{color:#8a8f94 !important}" +
     "#mgw-input:focus{border-color:#1DBF73}" +
     "#mgw-panel{color:#1a1a1a}" +
     "#mgw-foot{color:#1a1a1a}" +
@@ -369,6 +406,9 @@
   function scrollToBottom() { bodyEl.scrollTop = bodyEl.scrollHeight; }
 
   function addBubble(role, html) {
+    if (role === "bot") {
+      return addBotBubbleWithTyping(html);
+    }
     var row = el("div", { class: "mgw-row " + role });
     var bubble = el("div", { class: "mgw-bubble " + role }, html);
     row.appendChild(bubble);
@@ -377,17 +417,37 @@
     return bubble;
   }
 
-  function addChips(items) {
+  // Shows a brief animated "typing" bubble, then swaps it for the real bot message.
+  // Keeps addBubble's signature/return value the same so every existing call site
+  // (mainMenu, FAQ answers, fallback, etc.) keeps working without changes.
+  var TYPING_DELAY_MS = 1000;
+  function addBotBubbleWithTyping(html) {
     var row = el("div", { class: "mgw-row bot" });
-    var wrap = el("div", { class: "mgw-chips" });
-    items.forEach(function (item) {
-      var chip = el("button", { class: "mgw-chip", type: "button" }, item.label);
-      chip.addEventListener("click", function () { onUserSubmit(item.value || item.label, true); });
-      wrap.appendChild(chip);
-    });
-    row.appendChild(wrap);
+    var bubble = el("div", { class: "mgw-bubble bot mgw-typing" }, "<span></span><span></span><span></span>");
+    row.appendChild(bubble);
     bodyEl.appendChild(row);
     scrollToBottom();
+    setTimeout(function () {
+      bubble.classList.remove("mgw-typing");
+      bubble.innerHTML = html;
+      scrollToBottom();
+    }, TYPING_DELAY_MS);
+    return bubble;
+  }
+
+  function addChips(items) {
+    setTimeout(function () {
+      var row = el("div", { class: "mgw-row bot" });
+      var wrap = el("div", { class: "mgw-chips" });
+      items.forEach(function (item) {
+        var chip = el("button", { class: "mgw-chip", type: "button" }, item.label);
+        chip.addEventListener("click", function () { onUserSubmit(item.value || item.label, true); });
+        wrap.appendChild(chip);
+      });
+      row.appendChild(wrap);
+      bodyEl.appendChild(row);
+      scrollToBottom();
+    }, TYPING_DELAY_MS);
   }
 
   function linkHtml(label, url) {
@@ -405,16 +465,18 @@
   }
 
   function categoryChips(onPick) {
-    var row = el("div", { class: "mgw-row bot" });
-    var wrap = el("div", { class: "mgw-chips" });
-    CATEGORIES.forEach(function (c) {
-      var chip = el("button", { class: "mgw-chip", type: "button" }, c.label);
-      chip.addEventListener("click", function () { onPick(c); });
-      wrap.appendChild(chip);
-    });
-    row.appendChild(wrap);
-    bodyEl.appendChild(row);
-    scrollToBottom();
+    setTimeout(function () {
+      var row = el("div", { class: "mgw-row bot" });
+      var wrap = el("div", { class: "mgw-chips" });
+      CATEGORIES.forEach(function (c) {
+        var chip = el("button", { class: "mgw-chip", type: "button" }, c.label);
+        chip.addEventListener("click", function () { onPick(c); });
+        wrap.appendChild(chip);
+      });
+      row.appendChild(wrap);
+      bodyEl.appendChild(row);
+      scrollToBottom();
+    }, TYPING_DELAY_MS);
   }
 
   function showRecommendations(category) {
@@ -446,9 +508,12 @@
     var i = 0;
     function next() {
       if (i < steps.length) {
-        addBubble("bot", steps[i]);
+        // addBotBubbleWithTyping already waits TYPING_DELAY_MS before showing the
+        // text, so just chain straight off that instead of adding a second delay
+        // on top (which used to make steps lag further behind each typing animation).
+        addBotBubbleWithTyping(steps[i]);
         i++;
-        setTimeout(next, 450);
+        setTimeout(next, TYPING_DELAY_MS + 300);
       } else {
         addChips([{ label: "🎮 Recommend me a game", value: "recommend a game" }, { label: "Main menu", value: "menu" }]);
       }
