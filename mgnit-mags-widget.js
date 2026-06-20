@@ -1,8 +1,17 @@
 /*!
- * Mags — MGNIT Gaming free support widget
+ * Mags — MGNIT Gaming free support widget (v2 — smarter matching)
  * Rule-based, runs fully in the browser. No AI/API calls, no backend, no cost.
  * Install: paste <script src="mgnit-mags-widget.js"></script> right before </body>
  * Edit: update the GAMES / CATEGORIES / FAQS / NAV arrays below to add or change content.
+ *
+ * v2 changes:
+ *  - Fuzzy/typo-tolerant matching (Levenshtein distance) layered on top of exact matching.
+ *  - Token-overlap scoring: best match wins instead of first match, handles word-order
+ *    and partial-phrase input ("how play hero" / "rules for the inc hero game").
+ *  - Expanded keyword/synonym lists per FAQ, category, and nav entry based on how
+ *    real players actually phrase things (typos, slang, shorthand).
+ *  - Friendlier, less templated fallback + a few varied bot phrasings so it doesn't
+ *    feel like a scripted wall every time.
  */
 (function () {
   "use strict";
@@ -51,62 +60,197 @@
   ];
 
   var CATEGORIES = [
-    { key: "arcade", label: "Arcade", keywords: ["arcade"],
+    { key: "arcade", label: "Arcade", keywords: ["arcade", "arcad", "arkade"],
       rules: "Arcade games are quick, skill-based games played with mouse, touch, or arrow keys. The goal is usually to score as many points as possible or survive as long as you can.",
       picks: ["neon-pong", "all-golf", "pixcade-2-player-escape"] },
-    { key: "puzzles", label: "Puzzles", keywords: ["puzzle", "puzzles", "match-3", "match 3"],
+    { key: "puzzles", label: "Puzzles", keywords: ["puzzle", "puzzles", "match-3", "match 3", "match3", "puzzel", "puzzal", "brain game", "brain teaser"],
       rules: "Puzzle games are about logic and pattern-solving. You'll match, sort, slide, or rearrange pieces to meet each level's goal within a limited number of moves or amount of time.",
       picks: ["candy-ice-cream-crush-6803344d99ba5", "poker2048", "anime-find-the-differences"] },
-    { key: "hypercasual", label: "Hypercasual", keywords: ["hypercasual", "hyper casual", "hyper-casual"],
+    { key: "hypercasual", label: "Hypercasual", keywords: ["hypercasual", "hyper casual", "hyper-casual", "hyper", "one tap", "one-tap"],
       rules: "Hypercasual games use one-tap or one-swipe controls. The goal is usually to survive, travel as far as possible, or repeat an action correctly to set a new high score.",
       picks: ["bounceshift", "the-dry-rains"] },
-    { key: "adventure", label: "Adventure", keywords: ["adventure"],
+    { key: "adventure", label: "Adventure", keywords: ["adventure", "adventur", "story game", "rpg"],
       rules: "Adventure games let you control a character through levels or a story — fighting enemies, solving challenges, and collecting items. Progress by completing each level's objective.",
       picks: ["hero-inc", "claritas-dungeon-crawler-rpg-demo"] },
-    { key: "action", label: "Action", keywords: ["action"],
+    { key: "action", label: "Action", keywords: ["action", "fighting", "combat", "shooter", "racing", "race game"],
       rules: "Action games are fast-paced — combat, racing, or quick-reflex challenges. The goal is usually to defeat opponents, finish a course, or survive a level while avoiding damage.",
       picks: ["crowd-runners-3d", "bus-parking-unblocked", "abyssal-echoes"] },
-    { key: "kids", label: "Kids", keywords: ["kid", "kids", "child", "children"],
+    { key: "kids", label: "Kids", keywords: ["kid", "kids", "child", "children", "for kids", "kid friendly", "kid-friendly", "toddler"],
       rules: "Kids games use very simple, friendly controls — tap, click, or drag. They focus on matching, coloring, counting, or simple obstacle courses, with no violence.",
       picks: ["diamont", "what-number-is-it"] },
-    { key: "casual", label: "Casual", keywords: ["casual"],
+    { key: "casual", label: "Casual", keywords: ["casual", "relaxing", "relaxed", "chill game", "easy game"],
       rules: "Casual games are easy to pick up — swap, tap, or run to match items or clear obstacles. Built for short, relaxed play sessions, no prior gaming experience needed.",
       picks: ["juicy-run"] },
-    { key: "board", label: "Board", keywords: ["board"],
+    { key: "board", label: "Board", keywords: ["board", "card game", "cards", "solitaire", "boardgame"],
       rules: "Board games follow the same rules as their classic tabletop versions, like solitaire or checkers, just played digitally with click or tap controls.",
       picks: ["algerian-solitaire"] }
   ];
 
   var FAQS = [
-    { key: "loading", keywords: ["load", "loading", "not working", "wont play", "won't play", "stuck", "black screen", "lag", "freeze", "slow", "buffering"],
+    { key: "loading", keywords: ["load", "loading", "lode", "loding", "not working", "isnt working", "isn't working", "doesnt work", "doesn't work", "wont play", "won't play", "wont open", "won't open", "not opening", "stuck", "black screen", "white screen", "blank screen", "lag", "lagging", "laggy", "freeze", "freezing", "frozen", "slow", "buffering", "crash", "crashing", "crashed", "404", "error", "glitch", "glitchy", "broken"],
       label: "Game not loading", answer: "All games run straight in your browser — no downloads or installs needed. If a game won't load: refresh the page, try a different browser (latest Chrome/Edge works best), check your internet connection, and temporarily disable any ad-blocker, since it can sometimes block the game embed. Still stuck? Use the Report button on the game page so our team can take a look." },
-    { key: "account", keywords: ["account", "register", "sign up", "signup", "login", "log in", "password", "email", "create account"],
+    { key: "account", keywords: ["account", "register", "registration", "sign up", "signup", "sign-up", "login", "log in", "log-in", "logged in", "logging in", "password", "forgot password", "reset password", "email", "verify", "verification", "create account", "delete account", "username", "change email", "change username"],
       label: "Accounts & login", answer: "You don't need an account to play — just click Play Now on any game. If you'd like to track your stats and appear on the leaderboard, create a free account with a username, email, and password (8+ characters), or sign up instantly with Google.",
       links: [{ label: "Register", url: SITE + "/register" }, { label: "Login", url: SITE + "/login" }] },
-    { key: "leaderboard", keywords: ["leaderboard", "leader board", "rank", "ranking", "coins", "top player", "score board", "scoreboard", "playtime", "favorites"],
+    { key: "leaderboard", keywords: ["leaderboard", "leaderboards", "leader board", "rank", "ranking", "ranked", "coins", "top player", "top players", "score board", "scoreboard", "high score", "high scores", "playtime", "favorites", "most played"],
       label: "Leaderboard & coins", answer: "The leaderboard ranks players by Most Games Played, Most Coins Earned, Most Playtime, and Most Favorites. Create a free account and start playing — your stats update automatically as you go.",
       links: [{ label: "View leaderboard", url: SITE + "/leaderboards" }] },
-    { key: "safety", keywords: ["safe", "safety", "kids", "child", "children", "appropriate", "age", "parent", "parental"],
+    { key: "safety", keywords: ["safe", "safety", "is it safe", "appropriate", "age", "age limit", "parent", "parental", "parental control", "violence", "violent", "explicit", "nsfw"],
       label: "Kids safety", answer: "Our Community Guidelines keep the platform safe for all ages — hate speech, harassment, and sexually explicit or illegal content are never allowed. Every game, comment, and profile has a Report button, and our team reviews every report.",
       links: [{ label: "Community Guidelines", url: SITE + "/page/mgnit-gaming-ltd-community-guidelines" }] },
-    { key: "report", keywords: ["report", "abuse", "inappropriate", "bug", "complain", "violation", "issue"],
-      label: "Report a problem", answer: "Use the Report button on the game, comment, or profile in question, and include as much detail as you can (a screenshot or URL helps a lot). You can also reach the team directly at info@mgnitgaming.com." }
+    { key: "report", keywords: ["report", "abuse", "inappropriate", "bug", "complain", "complaint", "violation", "issue", "offensive", "harassment", "flag this", "flag a"],
+      label: "Report a problem", answer: "Use the Report button on the game, comment, or profile in question, and include as much detail as you can (a screenshot or URL helps a lot). You can also reach the team directly at info@mgnitgaming.com." },
+    { key: "free", keywords: ["free to play", "is this free", "cost money", "does it cost", "price", "paid", "subscription", "free to use"],
+      label: "Is it free?", answer: "Yep — MGNIT Gaming is 100% free to play. No subscriptions, no paywalls, no downloads. Just pick a game and hit Play." },
+    { key: "offline", keywords: ["offline", "without internet", "no internet", "download the game", "play offline"],
+      label: "Offline play", answer: "All our games run in-browser, so you'll need an internet connection to load and play them. We don't currently offer offline or downloadable versions." },
+    { key: "device", keywords: ["mobile", "phone", "tablet", "ipad", "android", "iphone", "which browser", "best browser", "browser support"],
+      label: "Devices & browsers", answer: "Most games work great on phones and tablets through your mobile browser, though a few play best on desktop. For the smoothest experience, use an up-to-date Chrome, Firefox, Edge, or Safari." },
+    { key: "ads", keywords: ["ads", "advertisement", "advertisements", "advert", "commercials"],
+      label: "Ads on the site", answer: "Like most free gaming sites, we show some advertising to help cover hosting costs — we keep it as light as possible so it doesn't get in the way of your gameplay." },
+    { key: "submit", keywords: ["submit a game", "submit my game", "upload a game", "add my game", "developer", "publish my game"],
+      label: "Submitting a game", answer: "Got a browser game you'd like featured? Head to the Submit a Game page, log in, and follow the upload steps with your game's files/link, title, and description. Our team reviews submissions and you'll hear back by email.",
+      links: [{ label: "Submit a game", url: SITE + "/submit-game" }] },
+    { key: "human", keywords: ["talk to a human", "real person", "human support", "contact support", "speak to someone", "customer service", "support email"],
+      label: "Talk to a human", answer: "If I can't sort it out, our team is just an email away at info@mgnitgaming.com — include screenshots or details about your device/browser if it's a bug, that helps a lot." }
   ];
 
   var NAV = [
-    { keywords: ["home", "homepage", "main page"], label: "Home", answer: "Here's the homepage, where you'll find featured and recently added games.", url: SITE + "/" },
-    { keywords: ["categories", "category", "genres", "browse"], label: "Categories", answer: "All game categories — Arcade, Puzzles, Adventure, Action, Hypercasual, Kids, and more — live here.", url: SITE + "/categories" },
-    { keywords: ["leaderboard", "leaderboards", "rank"], label: "Leaderboards", answer: "Here's the leaderboard, ranked by games played, coins, playtime, and favorites.", url: SITE + "/leaderboards" },
-    { keywords: ["blog", "news", "article"], label: "Blog", answer: "Our blog has game guides, tips, and platform news.", url: SITE + "/blog" },
-    { keywords: ["submit", "developer", "upload game", "add game"], label: "Submit a game", answer: "Game developers can submit their own game for the platform here.", url: SITE + "/submit-game" },
-    { keywords: ["login", "log in", "sign in"], label: "Login", answer: "You can sign in here.", url: SITE + "/login" },
-    { keywords: ["register", "sign up", "signup", "create account"], label: "Register", answer: "Create your free account here.", url: SITE + "/register" }
+    { keywords: ["home", "homepage", "main page", "go home"], label: "Home", answer: "Here's the homepage, where you'll find featured and recently added games.", url: SITE + "/" },
+    { keywords: ["categories", "category", "genres", "genre", "browse", "browse games", "all games"], label: "Categories", answer: "All game categories — Arcade, Puzzles, Adventure, Action, Hypercasual, Kids, and more — live here.", url: SITE + "/categories" },
+    { keywords: ["leaderboard", "leaderboards", "rank", "rankings"], label: "Leaderboards", answer: "Here's the leaderboard, ranked by games played, coins, playtime, and favorites.", url: SITE + "/leaderboards" },
+    { keywords: ["blog", "news", "article", "articles", "guides"], label: "Blog", answer: "Our blog has game guides, tips, and platform news.", url: SITE + "/blog" },
+    { keywords: ["submit", "developer", "upload game", "add game", "publish game"], label: "Submit a game", answer: "Game developers can submit their own game for the platform here.", url: SITE + "/submit-game" },
+    { keywords: ["login", "log in", "log-in", "sign in", "signin"], label: "Login", answer: "You can sign in here.", url: SITE + "/login" },
+    { keywords: ["register", "sign up", "signup", "sign-up", "create account"], label: "Register", answer: "Create your free account here.", url: SITE + "/register" }
   ];
 
-  var RECOMMEND_TRIGGERS = ["recommend", "suggest", "what should i play", "bored", "something fun", "what game", "any game", "good game"];
-  var ONBOARD_TRIGGERS = ["new here", "first time", "getting started", "how does this site work", "how does this work", "tutorial", "take a tour", "i'm new", "im new", "new player"];
+  var RECOMMEND_TRIGGERS = ["recommend", "suggest", "what should i play", "what should i", "bored", "something fun", "what game", "any game", "good game", "fun game", "best game", "play something", "give me a game"];
+  var ONBOARD_TRIGGERS = ["new here", "first time", "getting started", "how does this site work", "how does this work", "tutorial", "take a tour", "i'm new", "im new", "new player", "how do i start", "where do i start", "show me around"];
+  var GREETING_WORDS = { "hi": 1, "hello": 1, "hey": 1, "yo": 1, "hiya": 1, "heya": 1, "sup": 1, "howdy": 1, "salam": 1, "assalam": 1, "assalamualaikum": 1, "hola": 1 };
+  var GREETING_REPLIES = [
+    "Hey there! \u{1F44B} I'm Mags. What can I help you with?",
+    "Hi! Good to see you \u2014 what do you need?",
+    "Hello! How can I help today?"
+  ];
 
-  /* ---------------- MATCHING ---------------- */
+  function isGreeting(text) {
+    // Treat as a greeting only if the message is SHORT and made up of greeting
+    // words (plus minor punctuation/typos) \u2014 so "hi" and "hey there" count, but
+    // "hi, how do i reset my password" still falls through to real matching.
+    var words = tokenize(text);
+    if (words.length === 0 || words.length > 3) return false;
+    var greetingKeys = Object.keys(GREETING_WORDS);
+    for (var i = 0; i < words.length; i++) {
+      if (words[i] === "there" || words[i] === "guys" || words[i] === "team") continue;
+      if (GREETING_WORDS[words[i]]) continue;
+      var fuzzyHit = false;
+      for (var j = 0; j < greetingKeys.length; j++) {
+        if (fuzzyWordMatch(words[i], greetingKeys[j])) { fuzzyHit = true; break; }
+        // fuzzyWordMatch requires 3+ char words; handle short ones (hi, yo) directly.
+        if (words[i].length <= 3 && greetingKeys[j].length <= 4 && levenshtein(words[i], greetingKeys[j]) <= 1) { fuzzyHit = true; break; }
+      }
+      if (!fuzzyHit) return false;
+    }
+    return true;
+  }
+
+  // Friendlier varied phrasing so the bot doesn't feel like a scripted wall every time
+  var FALLBACK_LINES = [
+    "Hmm, I'm not totally sure on that one \u2014 but here's what I can help with:",
+    "I don't have an exact answer for that yet, but maybe one of these helps:",
+    "Not quite catching that \u2014 try rephrasing, or pick something below:"
+  ];
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+  /* ---------------- FUZZY / TOKEN MATCHING ---------------- */
+
+  // Damerau-Levenshtein edit distance — like standard Levenshtein but also treats
+  // an adjacent-letter swap (e.g. "icn" for "inc") as a single edit instead of two.
+  // That's the most common real typo pattern, so it matters for short words.
+  function levenshtein(a, b) {
+    if (a === b) return 0;
+    var al = a.length, bl = b.length;
+    if (al === 0) return bl;
+    if (bl === 0) return al;
+    var d = [];
+    for (var i = 0; i <= al; i++) { d[i] = []; d[i][0] = i; }
+    for (var j = 0; j <= bl; j++) d[0][j] = j;
+    for (i = 1; i <= al; i++) {
+      for (j = 1; j <= bl; j++) {
+        var cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+        var val = Math.min(
+          d[i - 1][j] + 1,
+          d[i][j - 1] + 1,
+          d[i - 1][j - 1] + cost
+        );
+        if (i > 1 && j > 1 && a.charAt(i - 1) === b.charAt(j - 2) && a.charAt(i - 2) === b.charAt(j - 1)) {
+          val = Math.min(val, d[i - 2][j - 2] + 1);
+        }
+        d[i][j] = val;
+      }
+    }
+    return d[al][bl];
+  }
+
+  // Two words are a "fuzzy match" if they're close enough relative to their length.
+  // Short words need an exact/near-exact match (avoids "a" matching everything);
+  // longer words tolerate 1-2 typo'd characters.
+  function fuzzyWordMatch(w1, w2) {
+    if (w1 === w2) return true;
+    if (w1.length < 3 || w2.length < 3) return false;
+    var maxLen = Math.max(w1.length, w2.length);
+    var allowed = maxLen <= 3 ? 1 : (maxLen <= 5 ? 1 : (maxLen <= 9 ? 2 : 3));
+    return levenshtein(w1, w2) <= allowed;
+  }
+
+  function tokenize(text) {
+    return (text || "").toLowerCase().match(/[a-z0-9']+/g) || [];
+  }
+
+  // Filler words that shouldn't count toward a fuzzy/token match score on their own —
+  // without this, generic phrases like "download the game" would score points just
+  // because the input also contains "the" and "game".
+  var STOPWORDS = { "the": 1, "a": 1, "an": 1, "is": 1, "it": 1, "to": 1, "of": 1, "in": 1,
+    "on": 1, "my": 1, "me": 1, "i": 1, "you": 1, "do": 1, "does": 1, "did": 1, "this": 1,
+    "for": 1, "and": 1, "or": 1, "game": 1, "games": 1, "play": 1, "playing": 1, "with": 1 };
+
+  function meaningfulTokens(tokens) {
+    var out = [];
+    for (var i = 0; i < tokens.length; i++) {
+      if (!STOPWORDS[tokens[i]]) out.push(tokens[i]);
+    }
+    return out;
+  }
+
+  // Scores how well `text` matches a single keyword/phrase:
+  //  +2 per exact substring hit of the whole phrase (cheap win for short exact phrases)
+  //  +1 per token in the keyword phrase that fuzzy-matches a token in the input
+  // Returns a numeric score (0 = no match at all).
+  function scorePhrase(textTokens, fullText, phrase) {
+    var score = 0;
+    var normPhrase = norm(phrase);
+    if (fullText.indexOf(normPhrase) !== -1) score += 2;
+
+    var phraseTokens = meaningfulTokens(tokenize(normPhrase));
+    if (phraseTokens.length === 0) return score; // pure-stopword phrase, substring hit only
+    for (var i = 0; i < phraseTokens.length; i++) {
+      for (var j = 0; j < textTokens.length; j++) {
+        if (fuzzyWordMatch(phraseTokens[i], textTokens[j])) { score += 1; break; }
+      }
+    }
+    return score;
+  }
+
+  // Scores text against a list of keyword phrases, returns the best single score.
+  function scoreKeywordList(textTokens, fullText, keywords) {
+    var best = 0;
+    for (var i = 0; i < keywords.length; i++) {
+      var s = scorePhrase(textTokens, fullText, keywords[i]);
+      if (s > best) best = s;
+    }
+    return best;
+  }
 
   function norm(s) { return (s || "").toLowerCase().trim(); }
 
@@ -117,33 +261,54 @@
     return false;
   }
 
+  // Picks the best-scoring entry from a list, given a function that returns
+  // that entry's keyword array. Requires a minimum score to avoid noisy matches.
+  function bestMatch(text, items, getKeywords, minScore) {
+    var textTokens = meaningfulTokens(tokenize(text));
+    var best = null, bestScore = 0;
+    for (var i = 0; i < items.length; i++) {
+      var s = scoreKeywordList(textTokens, text, getKeywords(items[i]));
+      if (s > bestScore) { bestScore = s; best = items[i]; }
+    }
+    return bestScore >= minScore ? best : null;
+  }
+
   function findGameByName(text) {
+    // Exact substring still wins outright (handles "play hero inc now" cleanly).
     var sorted = GAMES.slice().sort(function (a, b) { return b.name.length - a.name.length; });
     for (var i = 0; i < sorted.length; i++) {
       if (text.indexOf(norm(sorted[i].name)) !== -1) return sorted[i];
     }
-    return null;
+    // Fuzzy/token fallback for typo'd or partial game names, e.g. "hiro inc rules".
+    var textTokens = tokenize(text);
+    var best = null, bestScore = 0;
+    for (i = 0; i < GAMES.length; i++) {
+      var nameTokens = tokenize(GAMES[i].name);
+      var score = 0;
+      for (var j = 0; j < nameTokens.length; j++) {
+        for (var k = 0; k < textTokens.length; k++) {
+          if (fuzzyWordMatch(nameTokens[j], textTokens[k])) { score += 1; break; }
+        }
+      }
+      // Require matching MOST of the words in the game's name (not just one generic
+      // word like "run" or "echoes") so short/common words don't falsely trigger a
+      // game page. Single-word names still need that one word to match.
+      var needed = nameTokens.length <= 1 ? 1 : Math.max(2, nameTokens.length - 1);
+      if (score >= needed && score > bestScore) { bestScore = score; best = GAMES[i]; }
+    }
+    return best;
   }
 
   function findCategory(text) {
-    for (var i = 0; i < CATEGORIES.length; i++) {
-      if (containsAny(text, CATEGORIES[i].keywords)) return CATEGORIES[i];
-    }
-    return null;
+    return bestMatch(text, CATEGORIES, function (c) { return c.keywords; }, 1);
   }
 
   function findFAQ(text) {
-    for (var i = 0; i < FAQS.length; i++) {
-      if (containsAny(text, FAQS[i].keywords)) return FAQS[i];
-    }
-    return null;
+    return bestMatch(text, FAQS, function (f) { return f.keywords; }, 1);
   }
 
   function findNav(text) {
-    for (var i = 0; i < NAV.length; i++) {
-      if (containsAny(text, NAV[i].keywords)) return NAV[i];
-    }
-    return null;
+    return bestMatch(text, NAV, function (n) { return n.keywords; }, 1);
   }
 
   function gameUrl(slug) { return SITE + "/game/" + slug; }
@@ -297,6 +462,8 @@
 
     if (text === "menu" || text === "main menu") { addBubble("bot", "Sure \u2014 what do you need?"); mainMenu(); return; }
 
+    if (isGreeting(text)) { addBubble("bot", pick(GREETING_REPLIES)); mainMenu(); return; }
+
     if (text === "recommend a game" || containsAny(text, RECOMMEND_TRIGGERS)) {
       addBubble("bot", "What kind of game are you in the mood for?");
       categoryChips(showRecommendations);
@@ -344,7 +511,7 @@
       return;
     }
 
-    // free-text matching, in priority order
+    // free-text matching, in priority order — now fuzzy + scored instead of plain substring
     var game = findGameByName(text);
     if (game) { showGameRules(game); return; }
 
@@ -371,7 +538,7 @@
       return;
     }
 
-    addBubble("bot", "I don't have an exact answer for that yet \u2014 but here's what I can help with:");
+    addBubble("bot", pick(FALLBACK_LINES));
     mainMenu();
   }
 
