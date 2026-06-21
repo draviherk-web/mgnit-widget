@@ -676,10 +676,11 @@ var chatHistory = [];
         var reply = data && data.reply ? String(data.reply).trim() : "";
         if (reply) {
           resolveTypingBubble(bubble, escapeHtml(reply).replace(/\n/g, "<br>"));
-          // v5.4: only remember this exchange in history once we know it
-          // succeeded - a failed/fallback answer shouldn't pollute context
-          // for the next AI call.
-          pushHistory("user", userText);
+          // v5.5: the user's side of this turn is already saved by
+          // onUserSubmit when it was typed - only the AI's reply needs
+          // adding here (askAI doesn't use addBubble for its own replies).
+          // Still only on success - a failed answer shouldn't pollute
+          // context for the next call.
           pushHistory("assistant", reply);
         } else {
           resolveTypingBubble(bubble, pick(FALLBACK_LINES));
