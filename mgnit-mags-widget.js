@@ -24,7 +24,7 @@
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v5.0");
+  console.log("Mags widget loaded — v5.2");
 
   var SITE = "https://mgnitgaming.com";
 
@@ -782,7 +782,13 @@
     if (!isChip) addBubble("user", escapeHtml(raw));
 
     if (text === "menu" || text === "main menu") { addBubble("bot", "Sure \u2014 what do you need?"); mainMenu(); return; }
-
+ if (text === "none of these games") {
+      addBubble("bot", "No worries, let me take another look at that for you.");
+      if (AI_FALLBACK_URL) { askAI(raw); return; }
+      addBubble("bot", pick(FALLBACK_LINES));
+      mainMenu();
+      return;
+    }
     if (isGreeting(text)) { addBubble("bot", pick(GREETING_REPLIES)); mainMenu(); return; }
 
     // v5: explicit human-escalation intent is checked early, before AI and
@@ -855,11 +861,49 @@
     }
 
     var category = findCategory(text);
-    if (category && (text.indexOf("rule") !== -1 || text.indexOf("how") !== -1 || text.indexOf("play") !== -1)) {
-      showCategoryRules(category);
+    if (category) {
+      // v5.1: before giving a generic category-level answer, check if the
+      // text looks like it's trying to name a SPECIFIC game that didn't
+      // match cleanly (e.g. "Candy Match Game Rules" for
+      // "CANDY MATCH 3 KIT 2025"). If 1-3 games look like plausible
+      // matches, offer them as "did you mean" options instead of guessing
+      // or giving a generic answer. If nothing close, fall through to AI.
+      var textTokensForGuess = meaningfulTokens(tokenize(text));
+      var candidates = [];
+      if (textTokensForGuess.length >= 2) {
+        for (var gi = 0; gi < GAMES.length; gi++) {
+          var thisGameTokens = meaningfulTokens(tokenize(GAMES[gi].name));
+          var hits = 0;
+          for (var ti = 0; ti < textTokensForGuess.length; ti++) {
+            for (var gj = 0; gj < thisGameTokens.length; gj++) {
+              if (fuzzyWordMatch(textTokensForGuess[ti], thisGameTokens[gj])) { hits++; break; }
+            }
+          }
+          if (hits >= 2) candidates.push({ game: GAMES[gi], hits: hits });
+        }
+        candidates.sort(function (a, b) { return b.hits - a.hits; });
+      }
+ 
+      if (candidates.length > 0) {
+        // Found 1-3 plausible specific games - ask the user to confirm
+        // instead of guessing or giving a generic category answer.
+        var topCandidates = candidates.slice(0, 3);
+        addBubble("bot", "Did you mean one of these games?");
+        addChips(topCandidates.map(function (c) {
+          return { label: c.game.name, value: c.game.name };
+        }).concat([{ label: "None of these", value: "none of these games" }]));
+        return;
+      }
+ 
+      // No specific-game candidates found - this really is a generic
+      // category-level question, answer as before.
+      if (text.indexOf("rule") !== -1 || text.indexOf("how") !== -1 || text.indexOf("play") !== -1) {
+        showCategoryRules(category);
+        return;
+      }
+      showRecommendations(category);
       return;
     }
-    if (category) { showRecommendations(category); return; }
 
     var nav = findNav(text);
     if (nav) {
