@@ -1,66 +1,46 @@
 /*!
- * Mags — MGNIT Gaming free support widget (v2.3 — expanded game library)
- * Rule-based, runs fully in the browser. No AI/API calls, no backend, no cost.
- * Install: paste <script src="mgnit-mags-widget.js?v=2.3"></script> right before </body>
+ * Mags — MGNIT Gaming free support widget (v5 — AI fallback + human escalation)
+ * Rule-based by default. Falls back to AI (via worker.js) when no rule matches,
+ * and supports a direct "talk to a human" path that emails the team instead.
+ * Install: paste <script src="mgnit-mags-widget.js?v=5.0"></script> right before </body>
  * Edit: update the GAMES / CATEGORIES / FAQS / NAV arrays below to add or change content.
  *
- * v2.3 changes:
- *  - Expanded GAMES from 18 to 43 entries, pulled directly from the live homepage
- *    (Featured / Arcade / Puzzles / Hypercasual / Adventure / Action / Kids rows)
- *    on mgnitgaming.com as of June 2026, so the rules a player most likely asks
- *    about (e.g. "how do I play Tic Tac Toe") now have a real entry instead of
- *    falling through to a generic category answer.
- *  - Added "Super Tris Tic Tac Toe" — confirmed live in the Puzzles category and
- *    in Recently Added on the homepage.
- *  - NOTE: rules for the newly added games are written from the game's title,
- *    cover description, and standard mechanics for that game genre (e.g. match-3,
- *    tower defense, endless runner) — NOT from personally play-testing each one.
- *    Recommend spot-checking a handful of the new entries against the live game
- *    before calling this final, in case any title's actual mechanics differ from
- *    what the name/genre implies.
- *  - Did NOT add "Sins and Desires" or "Beaten Trump Face LOL" — both are still
- *    live on the site as of this update and are a separate brand-safety issue,
- *    not something to give players gameplay help for.
- *
- * v2.2 changes:
- *  - FIX: typed text in the input box could be invisible while typing (only the
- *    sent bubble showed text) on sites whose own theme CSS targets <input> with
- *    higher specificity than this widget's stylesheet (e.g. "#root input{color:#fff
- *    !important}" beats a plain "#mgw-input{color:#1a1a1a !important}" rule because
- *    it has one extra selector component). Fixed two ways: (1) widget CSS selectors
- *    for the input are now nested under #mgw-panel for higher specificity, and
- *    (2) the input's text/background colors are also force-set inline via
- *    style.setProperty(..., "important") in JS, which always wins over ANY
- *    external CSS regardless of specificity. Belt and suspenders.
- *  - Chips (quick-reply buttons) now appear slightly AFTER the bot's message
- *    finishes "typing" (CHIP_DELAY_MS) instead of at the exact same moment, so a
- *    reply reads as a sequence (typing -> message -> options) instead of
- *    everything popping in at once, which could read as "instant".
- *  - Added a console.log version marker on load — open DevTools > Console on the
- *    live site and confirm it says v2.3. If it doesn't, the browser/CDN is still
- *    serving an older cached copy of this file (see install note above: always
- *    load this script with a version query string and bump it on every update,
- *    otherwise browsers/CDNs can keep serving the old file indefinitely).
- *
- * v2.1 fixes (see CHANGELOG comment near the bottom of this file for details):
- *  - FAQ topics (kids safety, accounts, etc.) now take priority over loose category
- *    matches, so e.g. "is this safe for my kid" no longer gets hijacked into a Kids
- *    game recommendation instead of the safety answer.
- *  - Fuzzy word matching tightened (same-first-letter + stricter length-scaled edit
- *    distance) to remove false-positive collisions like "gaming"~"racing" or
- *    "offline"~"online" that were misrouting unrelated questions.
- *  - Onboarding trigger phrases widened ("give me a tour", "how do i get started",
- *    "what is this site", etc.) so common new-player phrasing isn't missed.
- *  - Greeting typo-tolerance fixed for 4-5 letter typos (e.g. "helo").
- *  - Multi-word game titles that contain filler words ("Anime Find The Differences",
- *    "What Number is it?") can now actually be fuzzy-matched by name.
+ * v5 changes (on top of v2.3):
+ *  - ADD: AI fallback. Leave AI_FALLBACK_URL empty ("") to keep this widget
+ *    100% rule-based with zero extra network calls. Once worker.js is
+ *    deployed, paste its URL here and any message that fails every
+ *    rule-based check gets sent to the AI instead of the old generic
+ *    "not sure" reply. Degrades gracefully to FALLBACK_LINES on any
+ *    error/timeout/empty response — can only improve things, never break them.
+ *  - ADD: "talk to a human" escalation. New trigger phrases (HUMAN_TRIGGERS)
+ *    detect when a user explicitly wants a person instead of the bot. When
+ *    matched, the user's message is sent to worker.js with type:"escalate",
+ *    which emails the team directly — no separate ticket dashboard needed.
+ *    This path is checked BEFORE the AI fallback, so explicit human requests
+ *    never get an AI-generated answer first.
+ *  - Carries forward all v2.3 content (43 games) and v2.1/v2.2 matching fixes
+ *    unchanged.
  */
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v2.3");
+  console.log("Mags widget loaded — v5.0");
 
   var SITE = "https://mgnitgaming.com";
+
+  // ---- AI fallback config (v5, carried from v4) ----
+  // Leave AI_FALLBACK_URL empty ("") to keep this widget fully rule-based.
+  // Once worker.js is deployed (Cloudflare Worker), paste its URL here.
+  var AI_FALLBACK_URL = "https://mags-ai.draviherk.workers.dev";
+  var AI_FALLBACK_TIMEOUT_MS = 8000; // give up and use FALLBACK_LINES after this long
+
+  // ---- Human escalation config (v5, new) ----
+  // Uses the SAME backend URL as AI fallback (worker.js handles both request
+  // types). If AI_FALLBACK_URL is empty, escalation is also disabled and the
+  // widget falls back to its normal FAQ "human" entry (email link) instead.
+  var ESCALATE_TIMEOUT_MS = 8000;
+  var ESCALATE_CONFIRM_MSG = "Got it \u2014 I've sent your message straight to our team. They'll follow up by reviewing it directly. In the meantime, is there anything else I can help with?";
+  var ESCALATE_FAIL_MSG = "I tried to send that to our team but something went wrong on my end. You can reach them directly at info@mgnitgaming.com in the meantime.";
 
   /* ---------------- KNOWLEDGE BASE ---------------- */
 
@@ -340,6 +320,14 @@
 
   var RECOMMEND_TRIGGERS = ["recommend", "suggest", "what should i play", "what should i", "bored", "something fun", "what game", "any game", "good game", "fun game", "best game", "play something", "give me a game"];
   var ONBOARD_TRIGGERS = ["new here", "first time", "getting started", "get started", "how does this site work", "how does this work", "what is this site", "what's this site", "tutorial", "take a tour", "give me a tour", "show me a tour", "i'm new", "im new", "new player", "new to this", "how do i start", "where do i start", "show me around", "how do i get started"];
+
+  // v5: explicit "I want a human, not a bot" intent. Checked BEFORE the AI
+  // fallback so an explicit request for a person never gets answered by AI
+  // first. Deliberately narrower/more direct than the FAQ "human" keywords
+  // above (which include softer phrasing like "customer service") — these
+  // are the phrases that mean "stop trying to answer, escalate this now".
+  var HUMAN_TRIGGERS = ["talk to a human", "talk to a real person", "speak to a human", "speak to a person", "speak to someone", "i want a human", "i want to talk to someone", "connect me with a human", "real person please", "human please", "can i talk to someone", "can i speak to someone", "get me a human", "is there a real person"];
+
   var GREETING_WORDS = { "hi": 1, "hello": 1, "hey": 1, "yo": 1, "hiya": 1, "heya": 1, "sup": 1, "howdy": 1, "salam": 1, "assalam": 1, "assalamualaikum": 1, "hola": 1 };
   var GREETING_REPLIES = [
     "Hey there! \u{1F44B} I'm Mags. What can I help you with?",
@@ -606,6 +594,106 @@
     return bubble;
   }
 
+  // v4/v5: same look as addBotBubbleWithTyping, but doesn't auto-fill after a
+  // fixed delay — the caller (askAI / escalateToHuman) fills it in whenever
+  // the network call actually finishes.
+  function addPendingTypingBubble() {
+    var row = el("div", { class: "mgw-row bot" });
+    var bubble = el("div", { class: "mgw-bubble bot mgw-typing" }, "<span></span><span></span><span></span>");
+    row.appendChild(bubble);
+    bodyEl.appendChild(row);
+    scrollToBottom();
+    return bubble;
+  }
+  function resolveTypingBubble(bubble, html) {
+    bubble.classList.remove("mgw-typing");
+    bubble.innerHTML = html;
+    scrollToBottom();
+  }
+
+  // v4: last-resort AI fallback. Only ever called when every rule-based check
+  // has already failed to match. Always degrades to the normal FALLBACK_LINES
+  // on any error, timeout, or empty response.
+  function askAI(userText) {
+    var bubble = addPendingTypingBubble();
+    var done = false;
+    var timeoutId = setTimeout(function () {
+      if (done) return;
+      done = true;
+      resolveTypingBubble(bubble, pick(FALLBACK_LINES));
+      mainMenu();
+    }, AI_FALLBACK_TIMEOUT_MS);
+
+    fetch(AI_FALLBACK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userText, type: "ai" })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+        var reply = data && data.reply ? String(data.reply).trim() : "";
+        if (reply) {
+          resolveTypingBubble(bubble, escapeHtml(reply).replace(/\n/g, "<br>"));
+        } else {
+          resolveTypingBubble(bubble, pick(FALLBACK_LINES));
+        }
+        mainMenu();
+      })
+      .catch(function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+        resolveTypingBubble(bubble, pick(FALLBACK_LINES));
+        mainMenu();
+      });
+  }
+
+  // v5: human escalation. Sends the user's message to the SAME backend with
+  // type:"escalate" instead of "ai" — worker.js routes that to an email
+  // instead of the AI model. Always shows a friendly confirmation regardless
+  // of whether the email actually succeeded server-side (the user shouldn't
+  // see backend plumbing failures); on a network-level failure (can't even
+  // reach the backend, or it's not configured), shows ESCALATE_FAIL_MSG with
+  // the direct email address instead, so the user always has a path forward.
+  function escalateToHuman(userText) {
+    var bubble = addPendingTypingBubble();
+    var done = false;
+    var timeoutId = setTimeout(function () {
+      if (done) return;
+      done = true;
+      resolveTypingBubble(bubble, ESCALATE_FAIL_MSG);
+      mainMenu();
+    }, ESCALATE_TIMEOUT_MS);
+
+    fetch(AI_FALLBACK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userText, type: "escalate", page: window.location.href })
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+        if (data && data.ok) {
+          resolveTypingBubble(bubble, ESCALATE_CONFIRM_MSG);
+        } else {
+          resolveTypingBubble(bubble, ESCALATE_FAIL_MSG);
+        }
+        mainMenu();
+      })
+      .catch(function () {
+        if (done) return;
+        done = true;
+        clearTimeout(timeoutId);
+        resolveTypingBubble(bubble, ESCALATE_FAIL_MSG);
+        mainMenu();
+      });
+  }
+
   function addChips(items) {
     setTimeout(function () {
       var row = el("div", { class: "mgw-row bot" });
@@ -697,6 +785,18 @@
 
     if (isGreeting(text)) { addBubble("bot", pick(GREETING_REPLIES)); mainMenu(); return; }
 
+    // v5: explicit human-escalation intent is checked early, before AI and
+    // before the FAQ "human" entry — these are stronger/more direct phrases
+    // than the softer FAQ keywords, and they should always trigger the real
+    // escalation action (email) rather than just showing the support email
+    // as text. Only fires if a backend URL is actually configured; otherwise
+    // falls through to the normal FAQ "human" entry further down, which just
+    // shows the email address as text.
+    if (AI_FALLBACK_URL && containsAny(text, HUMAN_TRIGGERS)) {
+      escalateToHuman(raw);
+      return;
+    }
+
     if (text === "recommend a game" || containsAny(text, RECOMMEND_TRIGGERS)) {
       addBubble("bot", "What kind of game are you in the mood for?");
       categoryChips(showRecommendations);
@@ -765,6 +865,15 @@
     if (nav) {
       addBubble("bot", nav.answer + "<br>" + linkHtml("Open " + nav.label, nav.url));
       addChips([{ label: "Somewhere else", value: "site navigation" }, { label: "Main menu", value: "menu" }]);
+      return;
+    }
+
+    // v5: every rule-based check above (human-escalation, games, categories,
+    // FAQ, nav) has failed to match. If AI fallback is configured, try that
+    // before giving up — pass the user's ORIGINAL text (not the lowercased/
+    // trimmed `text`) so the AI sees natural phrasing and punctuation.
+    if (AI_FALLBACK_URL) {
+      askAI(raw);
       return;
     }
 
