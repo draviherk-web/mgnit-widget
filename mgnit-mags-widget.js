@@ -24,7 +24,7 @@
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v5.3");
+  console.log("Mags widget loaded — v5.4");
 
   var SITE = "https://mgnitgaming.com";
 
@@ -33,6 +33,16 @@
   // Once worker.js is deployed (Cloudflare Worker), paste its URL here.
   var AI_FALLBACK_URL = "https://mags-ai.draviherk.workers.dev";
   var AI_FALLBACK_TIMEOUT_MS = 8000; // give up and use FALLBACK_LINES after this long
+
+var chatHistory = [];
+  var CHAT_HISTORY_MAX_TURNS = 6; // 6 entries = 3 user+assistant pairs
+
+  function pushHistory(role, content) {
+    chatHistory.push({ role: role, content: String(content || "").slice(0, 500) });
+    if (chatHistory.length > CHAT_HISTORY_MAX_TURNS) {
+      chatHistory.splice(0, chatHistory.length - CHAT_HISTORY_MAX_TURNS);
+    }
+  }
 
   // ---- Human escalation config (v5, new) ----
   // Uses the SAME backend URL as AI fallback (worker.js handles both request
@@ -637,11 +647,11 @@
       resolveTypingBubble(bubble, pick(FALLBACK_LINES));
       mainMenu();
     }, AI_FALLBACK_TIMEOUT_MS);
-
+ 
     fetch(AI_FALLBACK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, type: "ai" })
+      body: JSON.stringify({ message: userText, type: "ai", history: chatHistory })
     })
       .then(function (res) { return res.json(); })
       .then(function (data) {
@@ -651,6 +661,11 @@
         var reply = data && data.reply ? String(data.reply).trim() : "";
         if (reply) {
           resolveTypingBubble(bubble, escapeHtml(reply).replace(/\n/g, "<br>"));
+          // v5.4: only remember this exchange in history once we know it
+          // succeeded - a failed/fallback answer shouldn't pollute context
+          // for the next AI call.
+          pushHistory("user", userText);
+          pushHistory("assistant", reply);
         } else {
           resolveTypingBubble(bubble, pick(FALLBACK_LINES));
         }
