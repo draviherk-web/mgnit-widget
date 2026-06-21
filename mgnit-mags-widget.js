@@ -44,6 +44,16 @@ var chatHistory = [];
     }
   }
 
+  // v5.5: strips HTML (links, <br> tags) out of a bot answer so it can be
+  // stored as plain text in history - the AI only needs the words.
+  function stripHtmlForHistory(html) {
+    return String(html || "")
+      .replace(/<br\s*\/?>/gi, " ")
+      .replace(/<[^>]+>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   // ---- Human escalation config (v5, new) ----
   // Uses the SAME backend URL as AI fallback (worker.js handles both request
   // types). If AI_FALLBACK_URL is empty, escalation is also disabled and the
