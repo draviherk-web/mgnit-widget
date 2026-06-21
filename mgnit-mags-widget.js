@@ -602,6 +602,11 @@ var chatHistory = [];
 
   function addBubble(role, html) {
     if (role === "bot") {
+      // v5.5: every bot bubble - FAQ answers, game rules, category rules,
+      // nav answers, greetings, "did you mean" prompts, the welcome
+      // message - gets saved to history right here. This is what closes
+      // the gap: rule-based answers used to be invisible to memory.
+      pushHistory("assistant", stripHtmlForHistory(html));
       return addBotBubbleWithTyping(html);
     }
     var row = el("div", { class: "mgw-row " + role });
