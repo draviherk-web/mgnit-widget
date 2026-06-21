@@ -818,7 +818,13 @@ var chatHistory = [];
 
   function onUserSubmit(raw, isChip) {
     var text = norm(raw);
-    if (!isChip) addBubble("user", escapeHtml(raw));
+    if (!isChip) {
+      addBubble("user", escapeHtml(raw));
+      // v5.5: record EVERY typed message, not just the ones that end up
+      // answered by the AI. Combined with the addBubble change below, any
+      // typed follow-up now has the full conversation to work with.
+      pushHistory("user", raw);
+    }
 
     if (text === "menu" || text === "main menu") { addBubble("bot", "Sure \u2014 what do you need?"); mainMenu(); return; }
  if (text === "none of these games") {
