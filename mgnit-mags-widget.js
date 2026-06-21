@@ -24,7 +24,7 @@
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v5.2");
+  console.log("Mags widget loaded — v5.3");
 
   var SITE = "https://mgnitgaming.com";
 
@@ -327,6 +327,20 @@
   // above (which include softer phrasing like "customer service") — these
   // are the phrases that mean "stop trying to answer, escalate this now".
   var HUMAN_TRIGGERS = ["talk to a human", "talk to a real person", "speak to a human", "speak to a person", "speak to someone", "i want a human", "i want to talk to someone", "connect me with a human", "real person please", "human please", "can i talk to someone", "can i speak to someone", "get me a human", "is there a real person"];
+
+ var PROBLEM_KEYWORDS = ["not working", "isnt working", "isn't working",
+    "doesnt work", "doesn't work", "wont play", "won't play", "wont open",
+    "won't open", "not opening", "failing", "fails", "failed", "stuck",
+    "black screen", "white screen", "blank screen", "blank square",
+    "lag", "lagging", "laggy", "freeze", "freezing", "frozen", "slow",
+    "buffering", "crash", "crashing", "crashed", "glitch", "glitchy",
+    "broken", "won't start", "wont start", "not starting", "doesn't load",
+    "doesnt load", "won't load", "wont load", "not loading", "keeps",
+    "error", "bug", "problem", "issue", "help me with", "what do i do"];
+
+  function hasProblemKeyword(text) {
+    return containsAny(text, PROBLEM_KEYWORDS);
+  }
 
   var GREETING_WORDS = { "hi": 1, "hello": 1, "hey": 1, "yo": 1, "hiya": 1, "heya": 1, "sup": 1, "howdy": 1, "salam": 1, "assalam": 1, "assalamualaikum": 1, "hola": 1 };
   var GREETING_REPLIES = [
@@ -801,6 +815,14 @@
     if (AI_FALLBACK_URL && containsAny(text, HUMAN_TRIGGERS)) {
       escalateToHuman(raw);
       return;
+    }
+
+if (AI_FALLBACK_URL && hasProblemKeyword(text)) {
+      var problemGame = findGameByName(text);
+      if (problemGame) {
+        askAI(raw + " (regarding the game: " + problemGame.name + ")");
+        return;
+      }
     }
 
     if (text === "recommend a game" || containsAny(text, RECOMMEND_TRIGGERS)) {
