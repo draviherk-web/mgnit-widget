@@ -834,6 +834,11 @@ var chatHistory = [];
 
     if (text === "menu" || text === "main menu") { addBubble("bot", "Sure \u2014 what do you need?"); mainMenu(); return; }
  if (text === "none of these games") {
+      // v5.5: this branch only fires from a chip click, so it never went
+      // through the "record what was typed" step - add it here so history
+      // doesn't skip straight from the "did you mean" question to an AI
+      // reply with no user turn in between.
+      pushHistory("user", raw);
       addBubble("bot", "No worries, let me take another look at that for you.");
       if (AI_FALLBACK_URL) { askAI(raw); return; }
       addBubble("bot", pick(FALLBACK_LINES));
