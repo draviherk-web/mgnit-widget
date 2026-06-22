@@ -1,36 +1,28 @@
 /*!
- * Mags — MGNIT Gaming free support widget (v5.8 — slim hybrid, AI-first)
+ * Mags — MGNIT Gaming free support widget (v6.2 — slim hybrid, AI-first)
  * Rule-based ONLY for chip navigation and exact game-name lookups.
  * ALL typed natural-language messages go straight to Groq AI (via worker.js).
  * This permanently eliminates keyword-matching misfires on typed input.
  *
- * v5.8 changes (on top of v5.6):
- *  - REMOVE: RECOMMEND_TRIGGERS and ONBOARD_TRIGGERS containsAny() checks
- *    from the typed-message path. These caused misfires like
- *    "what should i do if website is slow" triggering game recommendations,
- *    and "why you don't responded in first time" triggering onboarding tour.
- *  - REMOVE: findFAQ(), findCategory(), findNav() from the typed-message
- *    path. AI handles all natural-language FAQ/category/nav questions better
- *    and more reliably than keyword matching ever could.
- *  - KEEP: all chip-exact routes (recommend a game, game rules, site
- *    navigation, faq help, tour) — chips send exact known values, safe.
- *  - KEEP: FAQ key exact match and nav label exact match — these only fire
- *    from chip clicks, never from typed input.
- *  - KEEP: isGreeting() for short typed greetings (1-3 words).
- *  - KEEP: HUMAN_TRIGGERS escalation — these specific phrases must trigger
- *    a real email, not an AI-generated answer.
- *  - KEEP: findGameByName() exact match — direct game name → rules card
- *    with play link. If game found + problem keyword → AI troubleshooting.
- *  - KEEP: loose game-match fallback for problem keywords (e.g.
- *    "candy match is glitching" — partial name + problem → AI with context).
- *  - NET RESULT: any typed message that isn't a greeting, escalation, or
- *    exact/near-exact game name now goes straight to Groq AI. No more wrong
- *    rule-based answers for natural language questions.
+ * v6.2 changes (on top of v6.1):
+ *  - REMOVED: AI auto-escalation handling. The worker no longer returns a
+ *    needs_human flag — it always just returns a plain { reply } now, so
+ *    askAI() no longer needs to branch on that.
+ *  - ADDED: email collection step before escalating to a human. When a
+ *    HUMAN_TRIGGER phrase is detected, Mags now asks "What's your email?"
+ *    first, waits for the next typed message, validates it looks like an
+ *    email, and only then sends the escalate request (with that email
+ *    included) to worker.js. This is a small two-step state machine
+ *    (awaitingEmailFor) that sits in front of the normal routing — it does
+ *    not touch any other routing logic (games, FAQ, nav, categories, etc).
+ *  - KEPT: everything else from v5.8/v6.1 unchanged — chip exact routes,
+ *    game-name matching, FAQ/nav exact matches, greeting detection,
+ *    PROBLEM_KEYWORDS + loose game matching for typed troubleshooting.
  */
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v6.1");
+  console.log("Mags widget loaded — v6.2");
 
   var SITE = "https://mgnitgaming.com";
 
@@ -58,8 +50,19 @@
 
   // ---- Human escalation config ----
   var ESCALATE_TIMEOUT_MS = 8000;
-  var ESCALATE_CONFIRM_MSG = "Got it \u2014 I've sent your message straight to our team. They'll follow up by reviewing it directly. In the meantime, is there anything else I can help with?";
+  var ESCALATE_CONFIRM_MSG = "Got it \u2014 I've sent your message straight to our team. They'll follow up by email. In the meantime, is there anything else I can help with?";
   var ESCALATE_FAIL_MSG = "I tried to send that to our team but something went wrong on my end. You can reach them directly at info@mgnitgaming.com in the meantime.";
+  var ASK_EMAIL_MSG = "Sure thing \u2014 what's your email so the team can get back to you?";
+  var EMAIL_INVALID_MSG = "That doesn't quite look like a valid email \u2014 mind double-checking it?";
+
+  // Tiny state machine: when set, the NEXT typed message is treated as the
+  // visitor's email for the pending escalation, instead of going through
+  // normal routing. Reset back to null once handled (sent or cancelled).
+  var pendingEscalation = null; // { originalMessage: string } | null
+
+  function looksLikeEmail(s) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
+  }
 
   /* ---------------- KNOWLEDGE BASE ---------------- */
 
@@ -605,7 +608,10 @@
       });
   }
 
-  function escalateToHuman(userText) {
+  // Sends the actual escalation request to worker.js, now that we have an
+  // email address for the visitor. originalMessage is the message that
+  // triggered the human-request in the first place (kept for ticket context).
+  function escalateToHuman(originalMessage, visitorEmail) {
     var bubble = addPendingTypingBubble();
     var done = false;
     var timeoutId = setTimeout(function () {
@@ -618,7 +624,13 @@
     fetch(AI_FALLBACK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, type: "escalate", page: window.location.href })
+      body: JSON.stringify({
+        message: originalMessage,
+        type: "escalate",
+        page: window.location.href,
+        email: visitorEmail,
+        history: chatHistory
+      })
     })
       .then(function (res) { return res.json(); })
       .then(function (data) {
@@ -639,6 +651,13 @@
         resolveTypingBubble(bubble, ESCALATE_FAIL_MSG);
         mainMenu();
       });
+  }
+
+  // Step 1 of the escalation flow: a HUMAN_TRIGGER phrase was detected.
+  // Ask for the visitor's email instead of escalating immediately.
+  function startEscalation(originalMessage) {
+    pendingEscalation = { originalMessage: originalMessage };
+    addBubble("bot", ASK_EMAIL_MSG);
   }
 
   function addChips(items) {
@@ -725,14 +744,13 @@
   }
 
   /* ------------------------------------------------------------------ *
-   *  onUserSubmit — v5.8 SLIM HYBRID                                    *
+   *  onUserSubmit — v6.2 SLIM HYBRID + EMAIL-GATED ESCALATION           *
    *                                                                      *
    *  Chip clicks  → exact text matches only (safe, no ambiguity).       *
-   *  Typed input  → greeting / human-escalation / exact game name,      *
-   *                 then STRAIGHT TO AI for everything else.             *
-   *                                                                      *
-   *  No more containsAny() on natural language — that was the root      *
-   *  cause of every misfire seen in testing.                             *
+   *  Typed input  → if an email is pending (awaiting escalation),       *
+   *                 handle that first. Otherwise: greeting / human-     *
+   *                 escalation-trigger / exact game name, then STRAIGHT *
+   *                 TO AI for everything else.                          *
    * ------------------------------------------------------------------ */
   function onUserSubmit(raw, isChip) {
     var text = norm(raw);
@@ -742,8 +760,22 @@
       pushHistory("user", raw);
     }
 
+    // ── 0. Pending escalation: the very next typed message is treated
+    //      as the visitor's email, not normal routing. ─────────────────────
+    if (pendingEscalation && !isChip) {
+      if (looksLikeEmail(raw)) {
+        var info = pendingEscalation;
+        pendingEscalation = null;
+        escalateToHuman(info.originalMessage, raw.trim());
+      } else {
+        addBubble("bot", EMAIL_INVALID_MSG);
+      }
+      return;
+    }
+
     // ── 1. Menu reset ─────────────────────────────────────────────────────
     if (text === "menu" || text === "main menu") {
+      pendingEscalation = null;
       addBubble("bot", "Sure \u2014 what do you need?");
       mainMenu();
       return;
@@ -812,9 +844,11 @@
     }
 
     // ── 7. Explicit human escalation ──────────────────────────────────────
-    // These phrases must trigger a real email, not an AI-generated answer.
+    // These phrases now start the email-collection step instead of
+    // escalating immediately. The real escalateToHuman() call happens once
+    // the visitor replies with a valid email (handled in block 0 above).
     if (AI_FALLBACK_URL && containsAny(text, HUMAN_TRIGGERS)) {
-      escalateToHuman(raw);
+      startEscalation(raw);
       return;
     }
 
@@ -860,8 +894,9 @@
 
     // ── 10. Everything else → AI ──────────────────────────────────────────
     // Natural language questions about loading, devices, accounts, site
-    // navigation, recommendations, onboarding, complaints — all handled
-    // by Groq. No more keyword matching on typed free-text input.
+    // navigation, recommendations, onboarding, complaints, refunds, etc —
+    // all handled by Groq, which now always answers positively and never
+    // refuses (see worker.js SYSTEM_PROMPT).
     if (AI_FALLBACK_URL) {
       askAI(raw);
       return;
