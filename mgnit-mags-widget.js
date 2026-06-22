@@ -24,7 +24,7 @@
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v5.4");
+  console.log("Mags widget loaded — v5.6");
 
   var SITE = "https://mgnitgaming.com";
 
