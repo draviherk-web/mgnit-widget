@@ -30,7 +30,7 @@
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v5.8");
+  console.log("Mags widget loaded — v6.1");
 
   var SITE = "https://mgnitgaming.com";
 
