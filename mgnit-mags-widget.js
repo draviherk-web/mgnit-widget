@@ -1,41 +1,45 @@
 /*!
- * Mags — MGNIT Gaming free support widget (v5 — AI fallback + human escalation)
- * Rule-based by default. Falls back to AI (via worker.js) when no rule matches,
- * and supports a direct "talk to a human" path that emails the team instead.
- * Install: paste <script src="mgnit-mags-widget.js?v=5.0"></script> right before </body>
- * Edit: update the GAMES / CATEGORIES / FAQS / NAV arrays below to add or change content.
+ * Mags — MGNIT Gaming free support widget (v5.8 — slim hybrid, AI-first)
+ * Rule-based ONLY for chip navigation and exact game-name lookups.
+ * ALL typed natural-language messages go straight to Groq AI (via worker.js).
+ * This permanently eliminates keyword-matching misfires on typed input.
  *
- * v5 changes (on top of v2.3):
- *  - ADD: AI fallback. Leave AI_FALLBACK_URL empty ("") to keep this widget
- *    100% rule-based with zero extra network calls. Once worker.js is
- *    deployed, paste its URL here and any message that fails every
- *    rule-based check gets sent to the AI instead of the old generic
- *    "not sure" reply. Degrades gracefully to FALLBACK_LINES on any
- *    error/timeout/empty response — can only improve things, never break them.
- *  - ADD: "talk to a human" escalation. New trigger phrases (HUMAN_TRIGGERS)
- *    detect when a user explicitly wants a person instead of the bot. When
- *    matched, the user's message is sent to worker.js with type:"escalate",
- *    which emails the team directly — no separate ticket dashboard needed.
- *    This path is checked BEFORE the AI fallback, so explicit human requests
- *    never get an AI-generated answer first.
- *  - Carries forward all v2.3 content (43 games) and v2.1/v2.2 matching fixes
- *    unchanged.
+ * v5.8 changes (on top of v5.6):
+ *  - REMOVE: RECOMMEND_TRIGGERS and ONBOARD_TRIGGERS containsAny() checks
+ *    from the typed-message path. These caused misfires like
+ *    "what should i do if website is slow" triggering game recommendations,
+ *    and "why you don't responded in first time" triggering onboarding tour.
+ *  - REMOVE: findFAQ(), findCategory(), findNav() from the typed-message
+ *    path. AI handles all natural-language FAQ/category/nav questions better
+ *    and more reliably than keyword matching ever could.
+ *  - KEEP: all chip-exact routes (recommend a game, game rules, site
+ *    navigation, faq help, tour) — chips send exact known values, safe.
+ *  - KEEP: FAQ key exact match and nav label exact match — these only fire
+ *    from chip clicks, never from typed input.
+ *  - KEEP: isGreeting() for short typed greetings (1-3 words).
+ *  - KEEP: HUMAN_TRIGGERS escalation — these specific phrases must trigger
+ *    a real email, not an AI-generated answer.
+ *  - KEEP: findGameByName() exact match — direct game name → rules card
+ *    with play link. If game found + problem keyword → AI troubleshooting.
+ *  - KEEP: loose game-match fallback for problem keywords (e.g.
+ *    "candy match is glitching" — partial name + problem → AI with context).
+ *  - NET RESULT: any typed message that isn't a greeting, escalation, or
+ *    exact/near-exact game name now goes straight to Groq AI. No more wrong
+ *    rule-based answers for natural language questions.
  */
 (function () {
   "use strict";
 
-  console.log("Mags widget loaded — v5.6");
+  console.log("Mags widget loaded — v5.8");
 
   var SITE = "https://mgnitgaming.com";
 
-  // ---- AI fallback config (v5, carried from v4) ----
-  // Leave AI_FALLBACK_URL empty ("") to keep this widget fully rule-based.
-  // Once worker.js is deployed (Cloudflare Worker), paste its URL here.
+  // ---- AI fallback config ----
   var AI_FALLBACK_URL = "https://mags-ai.draviherk.workers.dev";
-  var AI_FALLBACK_TIMEOUT_MS = 8000; // give up and use FALLBACK_LINES after this long
+  var AI_FALLBACK_TIMEOUT_MS = 8000;
 
-var chatHistory = [];
-  var CHAT_HISTORY_MAX_TURNS = 6; // 6 entries = 3 user+assistant pairs
+  var chatHistory = [];
+  var CHAT_HISTORY_MAX_TURNS = 6;
 
   function pushHistory(role, content) {
     chatHistory.push({ role: role, content: String(content || "").slice(0, 500) });
@@ -44,8 +48,6 @@ var chatHistory = [];
     }
   }
 
-  // v5.5: strips HTML (links, <br> tags) out of a bot answer so it can be
-  // stored as plain text in history - the AI only needs the words.
   function stripHtmlForHistory(html) {
     return String(html || "")
       .replace(/<br\s*\/?>/gi, " ")
@@ -54,10 +56,7 @@ var chatHistory = [];
       .trim();
   }
 
-  // ---- Human escalation config (v5, new) ----
-  // Uses the SAME backend URL as AI fallback (worker.js handles both request
-  // types). If AI_FALLBACK_URL is empty, escalation is also disabled and the
-  // widget falls back to its normal FAQ "human" entry (email link) instead.
+  // ---- Human escalation config ----
   var ESCALATE_TIMEOUT_MS = 8000;
   var ESCALATE_CONFIRM_MSG = "Got it \u2014 I've sent your message straight to our team. They'll follow up by reviewing it directly. In the meantime, is there anything else I can help with?";
   var ESCALATE_FAIL_MSG = "I tried to send that to our team but something went wrong on my end. You can reach them directly at info@mgnitgaming.com in the meantime.";
@@ -65,7 +64,6 @@ var chatHistory = [];
   /* ---------------- KNOWLEDGE BASE ---------------- */
 
   var GAMES = [
-    /* ---- Original 18 ---- */
     { name: "Hero Inc", slug: "hero-inc", category: "adventure",
       rules: "Use the keyboard or on-screen controls to move your hero through each 3D level. Explore the map, fight enemies in real-time combat, and pick up items or skills as you go. Defeat the level's boss or reach the exit to clear the stage and unlock the next one." },
     { name: "Neon Pong", slug: "neon-pong", category: "arcade",
@@ -102,10 +100,6 @@ var chatHistory = [];
       rules: "A simple collect-and-avoid game for younger players — guide your character to gather diamonds while steering clear of hazards. Collect the target number of diamonds, or reach the end of the level, to win." },
     { name: "What Number is it?", slug: "what-number-is-it", category: "kids",
       rules: "A number-recognition mini-game — look at the number or pattern shown and tap the matching answer. Answer correctly to move to the next round." },
-
-    /* ---- Added in v2.3 — pulled from live homepage, June 2026 ---- */
-
-    // Featured
     { name: "Halloween Blocks", slug: "halloween-blocks", category: "puzzles",
       rules: "A Tetris-style stacking game with a Halloween theme. Falling blocks drop from the top — rotate and move them with the arrow keys or on-screen controls to complete full horizontal lines. Completed lines clear and score points; the game ends if the blocks stack up to the top." },
     { name: "Rocket Jigsaw Picture Puzzle", slug: "rocket-jigsaw-picture-puzzle", category: "board",
@@ -130,8 +124,6 @@ var chatHistory = [];
       rules: "A motorbike racing game — use the arrow keys or on-screen controls to accelerate, brake, and balance your bike across ramps and obstacle-filled tracks. Reach the finish line as fast as possible without crashing to set your best time." },
     { name: "Akochan Quest", slug: "akochan-quest", category: "adventure",
       rules: "An adventure platformer — guide Akochan through each level, jumping over obstacles and avoiding enemies while collecting items along the way. Reach the end of each stage to progress to the next." },
-
-    // Arcade
     { name: "Space Ark Shooter", slug: "space-ark-shooter", category: "arcade",
       rules: "A classic space shooter — move your ship with the arrow keys or touch controls and fire at incoming enemy ships and asteroids. Destroy enemies for points while dodging their fire; losing all your lives ends the run." },
     { name: "Arcanoid Space Defense", slug: "arcanoid-space-defense", category: "arcade",
@@ -154,8 +146,6 @@ var chatHistory = [];
       rules: "A strategy/tactics game — position and command your units on the map, then plan your moves to defeat the enemy force or capture their territory. Think a few moves ahead, since the AI opponent reacts to your strategy." },
     { name: "ZigZag Animal Road", slug: "zigzag-animal-road", category: "hypercasual",
       rules: "A one-tap timing game — tap to make your animal character turn at each zigzag corner of the path. Time your taps correctly to keep moving forward without falling off the track." },
-
-    // Puzzles
     { name: "Super Tris Tic Tac Toe", slug: "super-tris-tic-tac-toe", category: "puzzles",
       rules: "A classic Tic Tac Toe (Noughts and Crosses) game, playable solo against the computer or with a friend. Take turns placing your X or O on the 3x3 grid — the first to line up three of their own symbol in a row, column, or diagonal wins. If the grid fills up with no line completed, it's a draw." },
     { name: "Brainrot Garden. Merge Cats", slug: "brainrot-garden-merge-cats", category: "puzzles",
@@ -180,8 +170,6 @@ var chatHistory = [];
       rules: "A sorting puzzle — drag colored squares into the matching colored container or zone before the level's move or time limit runs out. Sort everything correctly to clear the level and unlock the next one." },
     { name: "WORDLY", slug: "wordly", category: "puzzles",
       rules: "A word-guessing puzzle in the style of Wordle. You have a limited number of attempts to guess the hidden word — after each guess, the tiles show which letters are correct and in the right spot, correct but in the wrong spot, or not in the word at all. Use those clues to find the word before you run out of guesses." },
-
-    // Hypercasual
     { name: "Lost Things", slug: "lost-things", category: "hypercasual",
       rules: "A hidden-object game — scan the scene and tap on every item from the list shown on screen. Find everything before time runs out (if a timer is set) to clear the level." },
     { name: "Draw a skin for Mineblock with physics", slug: "draw-a-skin-for-mineblock-with-physics", category: "hypercasual",
@@ -206,8 +194,6 @@ var chatHistory = [];
       rules: "A 3D rolling-ball runner — your ball moves forward automatically; steer left and right to stay on the path and avoid falling off the edge or hitting obstacles. The further you go without falling, the higher your score." },
     { name: "Ghoul Fusion", slug: "ghoul-fusion", category: "hypercasual",
       rules: "A merge game with a spooky theme — drag two matching ghoul characters together to fuse them into a stronger version. Keep merging to unlock higher-tier ghouls and clear space on the board." },
-
-    // Adventure
     { name: "Ultimate Bottle Flip Game", slug: "ultimate-bottle-flip-game", category: "adventure",
       rules: "Time your tap or click to flip the bottle through the air so it lands upright on the target surface. Landing successfully scores points and moves you to the next, often trickier, level." },
     { name: "Fantasy Brothers", slug: "fantasy-brothers", category: "adventure",
@@ -228,8 +214,6 @@ var chatHistory = [];
       rules: "A role-playing adventure set in a dystopian world — explore the map, take on quests, battle enemies, and collect gear or items to grow stronger. Progress by completing objectives and clearing each area's challenges." },
     { name: "City Police Car Chase Game", slug: "city-police-car-chase-game", category: "adventure",
       rules: "A police driving simulator — use the on-screen or arrow-key controls to chase down suspect vehicles through city streets, matching their speed and maneuvers. Successfully catch the suspect or complete each chase scenario to clear the level." },
-
-    // Action
     { name: "Two Player Red Hands Game", slug: "two-player-red-hands-game", category: "action",
       rules: "A two-player reflex game based on the classic 'Red Hands' slap game, played on one device. One player places their hands under the other's, then tries to slap them before the other player can pull their hands away. Take turns being the slapper and the dodger — fastest reactions win each round." },
     { name: "space io", slug: "space-io", category: "action",
@@ -248,8 +232,6 @@ var chatHistory = [];
       rules: "A knife-throwing accuracy game with a Minecraft-style theme — tap or click at the right moment to throw your knife into the spinning wooden target without hitting a knife you've already thrown. Land enough knives to clear the level." },
     { name: "Stick Warrior", slug: "stick-warrior", category: "action",
       rules: "A stick-figure combat game — use the on-screen or keyboard controls to attack, block, and dodge as you battle enemy stick warriors. Defeat all enemies in the level to progress to the next stage." },
-
-    // Kids
     { name: "Choose Puzzle", slug: "choose-puzzle", category: "kids",
       rules: "A simple jigsaw puzzle picker for younger players — choose an image, then drag the puzzle pieces into their correct spots to complete the picture. There's no time pressure, so kids can go at their own pace." },
     { name: "Funny Animal Faces", slug: "funny-animal-faces", category: "kids",
@@ -300,18 +282,18 @@ var chatHistory = [];
   ];
 
   var FAQS = [
-    { key: "loading", keywords: ["load", "loading", "lode", "loding", "not working", "isnt working", "isn't working", "doesnt work", "doesn't work", "wont play", "won't play", "wont open", "won't open", "not opening", "stuck", "black screen", "white screen", "blank screen", "lag", "lagging", "laggy", "freeze", "freezing", "frozen", "slow", "buffering", "crash", "crashing", "crashed", "404", "error", "glitch", "glitchy", "broken"],
+    { key: "loading", keywords: ["load", "loading", "not working", "isnt working", "isn't working", "doesnt work", "doesn't work", "wont play", "won't play", "stuck", "black screen", "white screen", "lag", "lagging", "freeze", "freezing", "crash", "crashing", "error", "glitch", "glitchy", "broken"],
       label: "Game not loading", answer: "All games run straight in your browser — no downloads or installs needed. If a game won't load: refresh the page, try a different browser (latest Chrome/Edge works best), check your internet connection, and temporarily disable any ad-blocker, since it can sometimes block the game embed. Still stuck? Use the Report button on the game page so our team can take a look." },
-    { key: "account", keywords: ["account", "register", "registration", "sign up", "signup", "sign-up", "login", "log in", "log-in", "logged in", "logging in", "password", "forgot password", "reset password", "email", "verify", "verification", "create account", "delete account", "username", "change email", "change username"],
+    { key: "account", keywords: ["account", "register", "registration", "sign up", "signup", "login", "log in", "password", "forgot password", "reset password", "email", "verify", "create account", "delete account", "username", "change email"],
       label: "Accounts & login", answer: "You don't need an account to play — just click Play Now on any game. If you'd like to track your stats and appear on the leaderboard, create a free account with a username, email, and password (8+ characters), or sign up instantly with Google.",
       links: [{ label: "Register", url: SITE + "/register" }, { label: "Login", url: SITE + "/login" }] },
-    { key: "leaderboard", keywords: ["leaderboard", "leaderboards", "leader board", "rank", "ranking", "ranked", "coins", "top player", "top players", "score board", "scoreboard", "high score", "high scores", "playtime", "favorites", "most played"],
+    { key: "leaderboard", keywords: ["leaderboard", "leaderboards", "leader board", "rank", "ranking", "coins", "top player", "scoreboard", "high score", "playtime", "favorites", "most played"],
       label: "Leaderboard & coins", answer: "The leaderboard ranks players by Most Games Played, Most Coins Earned, Most Playtime, and Most Favorites. Create a free account and start playing — your stats update automatically as you go.",
       links: [{ label: "View leaderboard", url: SITE + "/leaderboards" }] },
     { key: "safety", keywords: ["safe", "safety", "is it safe", "appropriate", "age", "age limit", "parent", "parental", "parental control", "violence", "violent", "explicit", "nsfw"],
       label: "Kids safety", answer: "Our Community Guidelines keep the platform safe for all ages — hate speech, harassment, and sexually explicit or illegal content are never allowed. Every game, comment, and profile has a Report button, and our team reviews every report.",
       links: [{ label: "Community Guidelines", url: SITE + "/page/mgnit-gaming-ltd-community-guidelines" }] },
-    { key: "report", keywords: ["report", "abuse", "inappropriate", "bug", "complain", "complaint", "violation", "issue", "offensive", "harassment", "flag this", "flag a"],
+    { key: "report", keywords: ["report", "abuse", "inappropriate", "bug", "complain", "complaint", "violation", "offensive", "harassment"],
       label: "Report a problem", answer: "Use the Report button on the game, comment, or profile in question, and include as much detail as you can (a screenshot or URL helps a lot). You can also reach the team directly at info@mgnitgaming.com." },
     { key: "free", keywords: ["free to play", "is this free", "cost money", "does it cost", "price", "paid", "subscription", "free to use"],
       label: "Is it free?", answer: "Yep — MGNIT Gaming is 100% free to play. No subscriptions, no paywalls, no downloads. Just pick a game and hit Play." },
@@ -338,17 +320,13 @@ var chatHistory = [];
     { keywords: ["register", "sign up", "signup", "sign-up", "create account"], label: "Register", answer: "Create your free account here.", url: SITE + "/register" }
   ];
 
-  var RECOMMEND_TRIGGERS = ["recommend", "suggest", "what should i play", "what should i", "bored", "something fun", "what game", "any game", "good game", "fun game", "best game", "play something", "give me a game"];
-  var ONBOARD_TRIGGERS = ["new here", "first time", "getting started", "get started", "how does this site work", "how does this work", "what is this site", "what's this site", "tutorial", "take a tour", "give me a tour", "show me a tour", "i'm new", "im new", "new player", "new to this", "how do i start", "where do i start", "show me around", "how do i get started"];
-
-  // v5: explicit "I want a human, not a bot" intent. Checked BEFORE the AI
-  // fallback so an explicit request for a person never gets answered by AI
-  // first. Deliberately narrower/more direct than the FAQ "human" keywords
-  // above (which include softer phrasing like "customer service") — these
-  // are the phrases that mean "stop trying to answer, escalate this now".
+  // v5.8: HUMAN_TRIGGERS kept — these specific phrases must fire a real
+  // escalation email, not an AI-generated answer.
   var HUMAN_TRIGGERS = ["talk to a human", "talk to a real person", "speak to a human", "speak to a person", "speak to someone", "i want a human", "i want to talk to someone", "connect me with a human", "real person please", "human please", "can i talk to someone", "can i speak to someone", "get me a human", "is there a real person"];
 
- var PROBLEM_KEYWORDS = ["not working", "isnt working", "isn't working",
+  // v5.8: PROBLEM_KEYWORDS kept — used only in combination with game-name
+  // detection to route troubleshooting messages to AI with game context.
+  var PROBLEM_KEYWORDS = ["not working", "isnt working", "isn't working",
     "doesnt work", "doesn't work", "wont play", "won't play", "wont open",
     "won't open", "not opening", "failing", "fails", "failed", "stuck",
     "black screen", "white screen", "blank screen", "blank square",
@@ -445,40 +423,6 @@ var chatHistory = [];
     return out;
   }
 
-  function wholeWordBoundaryMatch(fullText, normPhrase) {
-    var escaped = normPhrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    var re = new RegExp("\\b" + escaped + "\\b");
-    return re.test(fullText);
-  }
-
-  function scorePhrase(textTokens, fullText, phrase) {
-    var score = 0;
-    var normPhrase = norm(phrase);
-    if (wholeWordBoundaryMatch(fullText, normPhrase)) score += 2;
-
-    var phraseTokens = meaningfulTokens(tokenize(normPhrase));
-    if (phraseTokens.length === 0) return score;
-
-    var hits = 0;
-    for (var i = 0; i < phraseTokens.length; i++) {
-      for (var j = 0; j < textTokens.length; j++) {
-        if (fuzzyWordMatch(phraseTokens[i], textTokens[j])) { hits++; break; }
-      }
-    }
-    var neededHits = phraseTokens.length === 1 ? 1 : Math.floor(phraseTokens.length / 2) + 1;
-    if (hits >= neededHits) score += hits;
-    return score;
-  }
-
-  function scoreKeywordList(textTokens, fullText, keywords) {
-    var best = 0;
-    for (var i = 0; i < keywords.length; i++) {
-      var s = scorePhrase(textTokens, fullText, keywords[i]);
-      if (s > best) best = s;
-    }
-    return best;
-  }
-
   function norm(s) { return (s || "").toLowerCase().trim(); }
 
   function containsAny(text, keywords) {
@@ -486,16 +430,6 @@ var chatHistory = [];
       if (text.indexOf(keywords[i]) !== -1) return true;
     }
     return false;
-  }
-
-  function bestMatch(text, items, getKeywords, minScore) {
-    var textTokens = meaningfulTokens(tokenize(text));
-    var best = null, bestScore = 0;
-    for (var i = 0; i < items.length; i++) {
-      var s = scoreKeywordList(textTokens, text, getKeywords(items[i]));
-      if (s > bestScore) { bestScore = s; best = items[i]; }
-    }
-    return bestScore >= minScore ? best : null;
   }
 
   function findGameByName(text) {
@@ -524,18 +458,6 @@ var chatHistory = [];
       if (score >= needed && score > bestScore) { bestScore = score; best = GAMES[i]; }
     }
     return best;
-  }
-
-  function findCategory(text) {
-    return bestMatch(text, CATEGORIES, function (c) { return c.keywords; }, 1);
-  }
-
-  function findFAQ(text) {
-    return bestMatch(text, FAQS, function (f) { return f.keywords; }, 1);
-  }
-
-  function findNav(text) {
-    return bestMatch(text, NAV, function (n) { return n.keywords; }, 1);
   }
 
   function gameUrl(slug) { return SITE + "/game/" + slug; }
@@ -602,10 +524,6 @@ var chatHistory = [];
 
   function addBubble(role, html) {
     if (role === "bot") {
-      // v5.5: every bot bubble - FAQ answers, game rules, category rules,
-      // nav answers, greetings, "did you mean" prompts, the welcome
-      // message - gets saved to history right here. This is what closes
-      // the gap: rule-based answers used to be invisible to memory.
       pushHistory("assistant", stripHtmlForHistory(html));
       return addBotBubbleWithTyping(html);
     }
@@ -619,6 +537,7 @@ var chatHistory = [];
 
   var TYPING_DELAY_MS = 1000;
   var CHIP_DELAY_MS = TYPING_DELAY_MS + 450;
+
   function addBotBubbleWithTyping(html) {
     var row = el("div", { class: "mgw-row bot" });
     var bubble = el("div", { class: "mgw-bubble bot mgw-typing" }, "<span></span><span></span><span></span>");
@@ -633,9 +552,6 @@ var chatHistory = [];
     return bubble;
   }
 
-  // v4/v5: same look as addBotBubbleWithTyping, but doesn't auto-fill after a
-  // fixed delay — the caller (askAI / escalateToHuman) fills it in whenever
-  // the network call actually finishes.
   function addPendingTypingBubble() {
     var row = el("div", { class: "mgw-row bot" });
     var bubble = el("div", { class: "mgw-bubble bot mgw-typing" }, "<span></span><span></span><span></span>");
@@ -644,15 +560,13 @@ var chatHistory = [];
     scrollToBottom();
     return bubble;
   }
+
   function resolveTypingBubble(bubble, html) {
     bubble.classList.remove("mgw-typing");
     bubble.innerHTML = html;
     scrollToBottom();
   }
 
-  // v4: last-resort AI fallback. Only ever called when every rule-based check
-  // has already failed to match. Always degrades to the normal FALLBACK_LINES
-  // on any error, timeout, or empty response.
   function askAI(userText) {
     var bubble = addPendingTypingBubble();
     var done = false;
@@ -662,7 +576,7 @@ var chatHistory = [];
       resolveTypingBubble(bubble, pick(FALLBACK_LINES));
       mainMenu();
     }, AI_FALLBACK_TIMEOUT_MS);
- 
+
     fetch(AI_FALLBACK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -676,11 +590,6 @@ var chatHistory = [];
         var reply = data && data.reply ? String(data.reply).trim() : "";
         if (reply) {
           resolveTypingBubble(bubble, escapeHtml(reply).replace(/\n/g, "<br>"));
-          // v5.5: the user's side of this turn is already saved by
-          // onUserSubmit when it was typed - only the AI's reply needs
-          // adding here (askAI doesn't use addBubble for its own replies).
-          // Still only on success - a failed answer shouldn't pollute
-          // context for the next call.
           pushHistory("assistant", reply);
         } else {
           resolveTypingBubble(bubble, pick(FALLBACK_LINES));
@@ -696,13 +605,6 @@ var chatHistory = [];
       });
   }
 
-  // v5: human escalation. Sends the user's message to the SAME backend with
-  // type:"escalate" instead of "ai" — worker.js routes that to an email
-  // instead of the AI model. Always shows a friendly confirmation regardless
-  // of whether the email actually succeeded server-side (the user shouldn't
-  // see backend plumbing failures); on a network-level failure (can't even
-  // reach the backend, or it's not configured), shows ESCALATE_FAIL_MSG with
-  // the direct email address instead, so the user always has a path forward.
   function escalateToHuman(userText) {
     var bubble = addPendingTypingBubble();
     var done = false;
@@ -822,22 +724,33 @@ var chatHistory = [];
     next();
   }
 
+  /* ------------------------------------------------------------------ *
+   *  onUserSubmit — v5.8 SLIM HYBRID                                    *
+   *                                                                      *
+   *  Chip clicks  → exact text matches only (safe, no ambiguity).       *
+   *  Typed input  → greeting / human-escalation / exact game name,      *
+   *                 then STRAIGHT TO AI for everything else.             *
+   *                                                                      *
+   *  No more containsAny() on natural language — that was the root      *
+   *  cause of every misfire seen in testing.                             *
+   * ------------------------------------------------------------------ */
   function onUserSubmit(raw, isChip) {
     var text = norm(raw);
+
     if (!isChip) {
       addBubble("user", escapeHtml(raw));
-      // v5.5: record EVERY typed message, not just the ones that end up
-      // answered by the AI. Combined with the addBubble change below, any
-      // typed follow-up now has the full conversation to work with.
       pushHistory("user", raw);
     }
 
-    if (text === "menu" || text === "main menu") { addBubble("bot", "Sure \u2014 what do you need?"); mainMenu(); return; }
- if (text === "none of these games") {
-      // v5.5: this branch only fires from a chip click, so it never went
-      // through the "record what was typed" step - add it here so history
-      // doesn't skip straight from the "did you mean" question to an AI
-      // reply with no user turn in between.
+    // ── 1. Menu reset ─────────────────────────────────────────────────────
+    if (text === "menu" || text === "main menu") {
+      addBubble("bot", "Sure \u2014 what do you need?");
+      mainMenu();
+      return;
+    }
+
+    // ── 2. "None of these games" chip ─────────────────────────────────────
+    if (text === "none of these games") {
       pushHistory("user", raw);
       addBubble("bot", "No worries, let me take another look at that for you.");
       if (AI_FALLBACK_URL) { askAI(raw); return; }
@@ -845,57 +758,35 @@ var chatHistory = [];
       mainMenu();
       return;
     }
-    if (isGreeting(text)) { addBubble("bot", pick(GREETING_REPLIES)); mainMenu(); return; }
 
-    // v5: explicit human-escalation intent is checked early, before AI and
-    // before the FAQ "human" entry — these are stronger/more direct phrases
-    // than the softer FAQ keywords, and they should always trigger the real
-    // escalation action (email) rather than just showing the support email
-    // as text. Only fires if a backend URL is actually configured; otherwise
-    // falls through to the normal FAQ "human" entry further down, which just
-    // shows the email address as text.
-    if (AI_FALLBACK_URL && containsAny(text, HUMAN_TRIGGERS)) {
-      escalateToHuman(raw);
-      return;
-    }
-
-if (AI_FALLBACK_URL && hasProblemKeyword(text)) {
-      var problemGame = findGameByName(text);
-      if (problemGame) {
-        askAI(raw + " (regarding the game: " + problemGame.name + ")");
-        return;
-      }
-    }
-
-    if (text === "recommend a game" || containsAny(text, RECOMMEND_TRIGGERS)) {
+    // ── 3. Main menu chip routes ──────────────────────────────────────────
+    // These exact values are only ever sent by chip clicks, never typed.
+    if (text === "recommend a game") {
       addBubble("bot", "What kind of game are you in the mood for?");
       categoryChips(showRecommendations);
       return;
     }
-
     if (text === "game rules") {
-      addBubble("bot", "Type a game name (e.g. \"Hero Inc\") or pick a category:");
+      addBubble("bot", "Type a game name (e.g. \u201cHero Inc\u201d) or pick a category:");
       categoryChips(showCategoryRules);
       return;
     }
-
     if (text === "site navigation") {
       addBubble("bot", "Where would you like to go?");
       addChips(NAV.map(function (n) { return { label: n.label, value: n.label }; }));
       return;
     }
-
     if (text === "faq help" || text === "faq" || text === "help") {
       addBubble("bot", "What do you need help with?");
       addChips(FAQS.map(function (f) { return { label: f.label, value: f.key }; }));
       return;
     }
-
-    if (text === "new here take a tour" || containsAny(text, ONBOARD_TRIGGERS)) {
+    if (text === "new here take a tour") {
       runOnboarding();
       return;
     }
 
+    // ── 4. FAQ chip exact key match ───────────────────────────────────────
     var faqByKey = FAQS.filter(function (f) { return f.key === text; })[0];
     if (faqByKey) {
       var ans = faqByKey.answer;
@@ -905,6 +796,7 @@ if (AI_FALLBACK_URL && hasProblemKeyword(text)) {
       return;
     }
 
+    // ── 5. Nav chip exact label match ─────────────────────────────────────
     var navByLabel = NAV.filter(function (n) { return norm(n.label) === text; })[0];
     if (navByLabel) {
       addBubble("bot", navByLabel.answer + "<br>" + linkHtml("Open " + navByLabel.label, navByLabel.url));
@@ -912,74 +804,64 @@ if (AI_FALLBACK_URL && hasProblemKeyword(text)) {
       return;
     }
 
-    var game = findGameByName(text);
-    if (game) { showGameRules(game); return; }
-
-    var faq = findFAQ(text);
-    if (faq) {
-      var a = faq.answer;
-      if (faq.links) a += "<br><br>" + faq.links.map(function (l) { return linkHtml(l.label, l.url); }).join(" &nbsp;|&nbsp; ");
-      addBubble("bot", a);
-      addChips([{ label: "Another topic", value: "faq help" }, { label: "Main menu", value: "menu" }]);
+    // ── 6. Short greeting (typed only — chips never say "hi") ─────────────
+    if (!isChip && isGreeting(text)) {
+      addBubble("bot", pick(GREETING_REPLIES));
+      mainMenu();
       return;
     }
 
-    var category = findCategory(text);
-    if (category) {
-      // v5.1: before giving a generic category-level answer, check if the
-      // text looks like it's trying to name a SPECIFIC game that didn't
-      // match cleanly (e.g. "Candy Match Game Rules" for
-      // "CANDY MATCH 3 KIT 2025"). If 1-3 games look like plausible
-      // matches, offer them as "did you mean" options instead of guessing
-      // or giving a generic answer. If nothing close, fall through to AI.
-      var textTokensForGuess = meaningfulTokens(tokenize(text));
-      var candidates = [];
-      if (textTokensForGuess.length >= 2) {
-        for (var gi = 0; gi < GAMES.length; gi++) {
-          var thisGameTokens = meaningfulTokens(tokenize(GAMES[gi].name));
-          var hits = 0;
-          for (var ti = 0; ti < textTokensForGuess.length; ti++) {
-            for (var gj = 0; gj < thisGameTokens.length; gj++) {
-              if (fuzzyWordMatch(textTokensForGuess[ti], thisGameTokens[gj])) { hits++; break; }
+    // ── 7. Explicit human escalation ──────────────────────────────────────
+    // These phrases must trigger a real email, not an AI-generated answer.
+    if (AI_FALLBACK_URL && containsAny(text, HUMAN_TRIGGERS)) {
+      escalateToHuman(raw);
+      return;
+    }
+
+    // ── 8. Exact / near-exact game name match ─────────────────────────────
+    // Game found + problem keyword → AI troubleshooting with game context.
+    // Game found, no problem keyword → show rules card with play link.
+    var game = findGameByName(text);
+    if (game) {
+      if (AI_FALLBACK_URL && hasProblemKeyword(text)) {
+        askAI(raw + " (regarding the game: " + game.name + ")");
+      } else {
+        showGameRules(game);
+      }
+      return;
+    }
+
+    // ── 9. Loose game match for problem messages ───────────────────────────
+    // e.g. "candy match is glitching" — strict findGameByName returned null
+    // but "candy" + "match" overlap with CANDY MATCH 3 KIT 2025.
+    // If exactly ONE game loosely matches, inject its name as context.
+    // 0 or 2+ ambiguous matches fall through to AI without specific context.
+    if (AI_FALLBACK_URL && hasProblemKeyword(text)) {
+      var looseCandidates = [];
+      var looseTextTokens = meaningfulTokens(tokenize(text));
+      if (looseTextTokens.length >= 2) {
+        for (var lgi = 0; lgi < GAMES.length; lgi++) {
+          var lGameTokens = meaningfulTokens(tokenize(GAMES[lgi].name));
+          var lHits = 0;
+          for (var lti = 0; lti < looseTextTokens.length; lti++) {
+            for (var lgj = 0; lgj < lGameTokens.length; lgj++) {
+              if (fuzzyWordMatch(looseTextTokens[lti], lGameTokens[lgj])) { lHits++; break; }
             }
           }
-          if (hits >= 2) candidates.push({ game: GAMES[gi], hits: hits });
+          if (lHits >= 2) looseCandidates.push({ game: GAMES[lgi], hits: lHits });
         }
-        candidates.sort(function (a, b) { return b.hits - a.hits; });
+        looseCandidates.sort(function (a, b) { return b.hits - a.hits; });
       }
- 
-      if (candidates.length > 0) {
-        // Found 1-3 plausible specific games - ask the user to confirm
-        // instead of guessing or giving a generic category answer.
-        var topCandidates = candidates.slice(0, 3);
-        addBubble("bot", "Did you mean one of these games?");
-        addChips(topCandidates.map(function (c) {
-          return { label: c.game.name, value: c.game.name };
-        }).concat([{ label: "None of these", value: "none of these games" }]));
+      if (looseCandidates.length === 1) {
+        askAI(raw + " (regarding the game: " + looseCandidates[0].game.name + ")");
         return;
       }
- 
-      // No specific-game candidates found - this really is a generic
-      // category-level question, answer as before.
-      if (text.indexOf("rule") !== -1 || text.indexOf("how") !== -1 || text.indexOf("play") !== -1) {
-        showCategoryRules(category);
-        return;
-      }
-      showRecommendations(category);
-      return;
     }
 
-    var nav = findNav(text);
-    if (nav) {
-      addBubble("bot", nav.answer + "<br>" + linkHtml("Open " + nav.label, nav.url));
-      addChips([{ label: "Somewhere else", value: "site navigation" }, { label: "Main menu", value: "menu" }]);
-      return;
-    }
-
-    // v5: every rule-based check above (human-escalation, games, categories,
-    // FAQ, nav) has failed to match. If AI fallback is configured, try that
-    // before giving up — pass the user's ORIGINAL text (not the lowercased/
-    // trimmed `text`) so the AI sees natural phrasing and punctuation.
+    // ── 10. Everything else → AI ──────────────────────────────────────────
+    // Natural language questions about loading, devices, accounts, site
+    // navigation, recommendations, onboarding, complaints — all handled
+    // by Groq. No more keyword matching on typed free-text input.
     if (AI_FALLBACK_URL) {
       askAI(raw);
       return;
