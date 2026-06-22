@@ -580,7 +580,7 @@
     fetch(AI_FALLBACK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: userText, type: "ai", history: chatHistory })
+      body: JSON.stringify({ message: userText, type: "ai", history: chatHistory, page: window.location.href })
     })
       .then(function (res) { return res.json(); })
       .then(function (data) {
