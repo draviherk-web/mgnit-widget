@@ -28,7 +28,8 @@
 
   // ---- AI fallback config ----
   var AI_FALLBACK_URL = "https://mags-ai.draviherk.workers.dev";
-  var AI_FALLBACK_TIMEOUT_MS = 8000;
+  var AI_FALLBACK_TIMEOUT_MS = 13000;
+  var MIN_AI_RESPONSE_MS = 1300; // reply chahe kitni jaldi aa jaye, kam az kam itna time "typing" dikhao
 
   var chatHistory = [];
   var CHAT_HISTORY_MAX_TURNS = 6;
@@ -572,6 +573,7 @@
 
   function askAI(userText) {
     var bubble = addPendingTypingBubble();
+    var startedAt = Date.now();
     var done = false;
     var timeoutId = setTimeout(function () {
       if (done) return;
@@ -580,6 +582,18 @@
       mainMenu();
     }, AI_FALLBACK_TIMEOUT_MS);
 
+    function finish(html) {
+      if (done) return;
+      done = true;
+      clearTimeout(timeoutId);
+      var elapsed = Date.now() - startedAt;
+      var wait = Math.max(0, MIN_AI_RESPONSE_MS - elapsed);
+      setTimeout(function () {
+        resolveTypingBubble(bubble, html);
+        mainMenu();
+      }, wait);
+    }
+
     fetch(AI_FALLBACK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -587,18 +601,18 @@
     })
       .then(function (res) { return res.json(); })
       .then(function (data) {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
         var reply = data && data.reply ? String(data.reply).trim() : "";
         if (reply) {
-          resolveTypingBubble(bubble, formatAIReply(reply));
           pushHistory("assistant", reply);
+          finish(formatAIReply(reply));
         } else {
-          resolveTypingBubble(bubble, pick(FALLBACK_LINES));
+          finish(pick(FALLBACK_LINES));
         }
-        mainMenu();
       })
+      .catch(function () {
+        finish(pick(FALLBACK_LINES));
+      });
+  }
       .catch(function () {
         if (done) return;
         done = true;
