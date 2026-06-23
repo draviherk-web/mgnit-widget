@@ -614,11 +614,7 @@
       });
   }
       .catch(function () {
-        if (done) return;
-        done = true;
-        clearTimeout(timeoutId);
-        resolveTypingBubble(bubble, pick(FALLBACK_LINES));
-        mainMenu();
+        finish(pick(FALLBACK_LINES));
       });
   }
 
