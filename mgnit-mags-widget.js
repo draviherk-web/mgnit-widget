@@ -592,7 +592,7 @@
         clearTimeout(timeoutId);
         var reply = data && data.reply ? String(data.reply).trim() : "";
         if (reply) {
-          resolveTypingBubble(bubble, escapeHtml(reply).replace(/\n/g, "<br>"));
+          resolveTypingBubble(bubble, formatAIReply(reply));
           pushHistory("assistant", reply);
         } else {
           resolveTypingBubble(bubble, pick(FALLBACK_LINES));
