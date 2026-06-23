@@ -613,11 +613,6 @@
         finish(pick(FALLBACK_LINES));
       });
   }
-      .catch(function () {
-        finish(pick(FALLBACK_LINES));
-      });
-  }
-
   // Sends the actual escalation request to worker.js, now that we have an
   // email address for the visitor. originalMessage is the message that
   // triggered the human-request in the first place (kept for ticket context).
