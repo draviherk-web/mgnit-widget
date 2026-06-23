@@ -911,6 +911,14 @@
     d.textContent = s;
     return d.innerHTML;
   }
+  // Converts AI replies into safe HTML: escapes real HTML first, then turns
+  // markdown-style **bold** into actual <strong> bold (in case the AI
+  // ignores the "no markdown" instruction), and newlines into <br>.
+  function formatAIReply(raw) {
+    var safe = escapeHtml(raw);
+    safe = safe.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    return safe.replace(/\n/g, "<br>");
+  }
 
   function buildUI() {
     injectCSS();
