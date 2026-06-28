@@ -62,9 +62,9 @@
   var pendingEscalation = null; // { originalMessage: string } | null
 
   function looksLikeEmail(s) {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || "").trim());
-  }
-
+  var match = String(s || "").match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+  return match !== null;
+}
   /* ---------------- KNOWLEDGE BASE ---------------- */
 
   var GAMES = [
