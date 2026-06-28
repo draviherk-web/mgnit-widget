@@ -864,7 +864,7 @@ if (faqByKey) {
     // Game found, no problem keyword → show rules card with play link.
     var game = findGameByName(text);
     if (game) {
-      if (AI_FALLBACK_URL && hasProblemKeyword(text)) {
+      if (AI_FALLBACK_URL && (hasProblemKeyword(text) || text.indexOf("download") !== -1)) {
         askAI(raw + " (regarding the game: " + game.name + ")");
       } else {
         showGameRules(game);
