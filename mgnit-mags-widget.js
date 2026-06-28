@@ -853,9 +853,11 @@ if (faqByKey) {
     // These phrases now start the email-collection step instead of
     // escalating immediately. The real escalateToHuman() call happens once
     // the visitor replies with a valid email (handled in block 0 above).
-    if (AI_FALLBACK_URL && containsAny(text, HUMAN_TRIGGERS)) {
-      startEscalation(raw);
-      return;
+    var HUMAN_KEYWORDS = ["human", "person", "speak", "talk to", "agent", "real support", "someone", "contact", "spek", "speek", "somone"];
+if (AI_FALLBACK_URL && containsAny(text, HUMAN_KEYWORDS)) {
+  startEscalation(raw);
+  return;
+}
     }
 
     // ── 8. Exact / near-exact game name match ─────────────────────────────
