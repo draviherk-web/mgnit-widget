@@ -825,8 +825,9 @@
 
     // ── 4. FAQ chip exact key match ───────────────────────────────────────
     var faqByKey = FAQS.filter(function (f) { return f.key === text; })[0];
-    if (faqByKey) {
-      var ans = faqByKey.answer;
+if (faqByKey) {
+  if (faqByKey.key === "human") { startEscalation("User requested human support"); return; }
+  var ans = faqByKey.answer;
       if (faqByKey.links) ans += "<br><br>" + faqByKey.links.map(function (l) { return linkHtml(l.label, l.url); }).join(" &nbsp;|&nbsp; ");
       addBubble("bot", ans);
       addChips([{ label: "Another topic", value: "faq help" }, { label: "Main menu", value: "menu" }]);
