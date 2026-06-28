@@ -854,11 +854,12 @@ if (faqByKey) {
     // escalating immediately. The real escalateToHuman() call happens once
     // the visitor replies with a valid email (handled in block 0 above).
     var HUMAN_KEYWORDS = ["human", "person", "speak", "talk to", "agent", "real support", "someone", "contact", "spek", "speek", "somone"];
-if (AI_FALLBACK_URL && containsAny(text, HUMAN_KEYWORDS)) {
-  startEscalation(raw);
-  return;
+    if (AI_FALLBACK_URL && containsAny(text, HUMAN_KEYWORDS)) {
+      startEscalation(raw);
+      return;
+    }
 
-    // ── 8. Exact / near-exact game name match ─────────────────────────────
+    // ── 8. Exact / near-exact game name match
     // Game found + problem keyword → AI troubleshooting with game context.
     // Game found, no problem keyword → show rules card with play link.
     var game = findGameByName(text);
