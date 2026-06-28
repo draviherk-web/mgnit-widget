@@ -326,8 +326,7 @@
 
   // v5.8: HUMAN_TRIGGERS kept — these specific phrases must fire a real
   // escalation email, not an AI-generated answer.
-  var HUMAN_TRIGGERS = ["talk to a human", "talk to a real person", "speak to a human", "speak to a person", "speak to someone", "i want a human", "i want to talk to someone", "connect me with a human", "real person please", "human please", "can i talk to someone", "can i speak to someone", "get me a human", "is there a real person", "talk to someone", "chat with a human", "chat with someone", "need a human", "need a real person", "email support", "email the team"];
-
+var HUMAN_TRIGGERS = ["talk to a human", "talk to a real person", "speak to a human", "speak to a person", "speak to someone", "i want a human", "i want to talk to someone", "connect me with a human", "real person please", "human please", "can i talk to someone", "can i speak to someone", "get me a human", "is there a real person", "talk to someone", "chat with a human", "chat with someone", "need a human", "need a real person", "email support", "email the team", "spek to", "speek to", "i can spek", "i can speak", "is there any human", "any human i can"];
   // v5.8: PROBLEM_KEYWORDS kept — used only in combination with game-name
   // detection to route troubleshooting messages to AI with game context.
   var PROBLEM_KEYWORDS = ["not working", "isnt working", "isn't working",
