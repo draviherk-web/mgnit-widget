@@ -771,7 +771,8 @@
       if (looksLikeEmail(raw)) {
         var info = pendingEscalation;
         pendingEscalation = null;
-        escalateToHuman(info.originalMessage, raw.trim());
+        var emailMatch = raw.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+escalateToHuman(info.originalMessage, emailMatch ? emailMatch[0] : raw.trim());
       } else {
         addBubble("bot", EMAIL_INVALID_MSG);
       }
