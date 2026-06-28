@@ -858,7 +858,6 @@ if (AI_FALLBACK_URL && containsAny(text, HUMAN_KEYWORDS)) {
   startEscalation(raw);
   return;
 }
-    }
 
     // ── 8. Exact / near-exact game name match ─────────────────────────────
     // Game found + problem keyword → AI troubleshooting with game context.
